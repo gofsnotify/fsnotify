@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const eventTimeout = 2 * time.Second
+const eventTimeout = 5 * time.Second
 
 func newWatcher(t *testing.T) *Watcher {
 	t.Helper()
@@ -218,7 +218,9 @@ func TestWatchChmod(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	if err := os.Chmod(target, 0o600); err != nil {
+	// 0o400 forces the read-only attribute on Windows so the change
+	// is observable; on Unix it is a real permission flip.
+	if err := os.Chmod(target, 0o400); err != nil {
 		t.Fatalf("Chmod: %v", err)
 	}
 

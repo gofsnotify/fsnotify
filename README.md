@@ -1,5 +1,7 @@
 # fsnotify
 
+[![CI](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml/badge.svg)](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml)
+
 Cross-platform file system notifications for Go.
 
 ## Install
@@ -74,7 +76,7 @@ func main() {
 |---------|------------------------|-----------|
 | Linux   | inotify                | Supported |
 | Windows | ReadDirectoryChangesW  | Supported |
-| macOS   | FSEvents / kqueue      | Planned   |
+| macOS   | kqueue                 | Supported |
 
 ## License
 
