@@ -122,6 +122,47 @@ func TestWatchFileWrite(t *testing.T) {
 	}
 }
 
+func TestKqueueCreateReportsChildRegistrationFailure(t *testing.T) {
+	if runtime.GOOS != "freebsd" {
+		t.Skip("kqueue regression test")
+	}
+	dir := tempDir(t)
+	target := filepath.Join(dir, "dangling-link")
+
+	w := newWatcher(t)
+	if err := w.Add(dir, Create|Write); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "missing-target"), target); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	var sawCreate bool
+	var sawRegisterErr bool
+	deadline := time.NewTimer(eventTimeout)
+	defer deadline.Stop()
+	for !sawCreate || !sawRegisterErr {
+		select {
+		case ev, ok := <-w.Events:
+			if !ok {
+				t.Fatalf("Events channel closed early")
+			}
+			if ev.Name == target && ev.Op.Has(Create) {
+				sawCreate = true
+			}
+		case err, ok := <-w.Errors:
+			if !ok {
+				t.Fatalf("Errors channel closed early")
+			}
+			if strings.Contains(err.Error(), "fsnotify: register "+target+":") {
+				sawRegisterErr = true
+			}
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for Create and registration error; sawCreate=%v sawRegisterErr=%v", sawCreate, sawRegisterErr)
+		}
+	}
+}
+
 func TestWatchRemove(t *testing.T) {
 	dir := tempDir(t)
 	target := filepath.Join(dir, "a.txt")
