@@ -1,71 +1,6 @@
-//go:build darwin && cgo
+//go:build darwin
 
 package fsnotify
-
-/*
-#cgo LDFLAGS: -framework CoreServices
-#include <CoreServices/CoreServices.h>
-#include <dispatch/dispatch.h>
-
-// Forward-declare the Go callback so the C trampoline can call it.
-extern void goFSEventsCallback(
-	uintptr_t info,
-	size_t numEvents,
-	char **paths,
-	FSEventStreamEventFlags *flags,
-	FSEventStreamEventId *ids);
-
-// bridgeCallback is a static C function passed to FSEventStreamCreate.
-// It casts the opaque arguments into typed pointers and forwards them to Go.
-static void bridgeCallback(
-	ConstFSEventStreamRef ref,
-	void *info,
-	size_t numEvents,
-	void *eventPaths,
-	const FSEventStreamEventFlags eventFlags[],
-	const FSEventStreamEventId eventIds[])
-{
-	goFSEventsCallback(
-		(uintptr_t)info,
-		numEvents,
-		(char **)eventPaths,
-		(FSEventStreamEventFlags *)eventFlags,
-		(FSEventStreamEventId *)eventIds);
-}
-
-// createStream wraps FSEventStreamCreate so Go doesn't need to build a
-// C function pointer from an //export symbol (which cgo disallows).
-static FSEventStreamRef createStream(
-	uintptr_t info,
-	CFArrayRef paths,
-	FSEventStreamEventId sinceWhen,
-	CFTimeInterval latency,
-	FSEventStreamCreateFlags flags)
-{
-	FSEventStreamContext ctx = {0, (void *)info, NULL, NULL, NULL};
-	return FSEventStreamCreate(
-		NULL,
-		bridgeCallback,
-		&ctx,
-		paths,
-		sinceWhen,
-		latency,
-		flags);
-}
-
-// releaseQueue wraps dispatch_release so it can be called from Go
-// without needing a cast to dispatch_object_t.
-static void releaseQueue(dispatch_queue_t q) {
-	dispatch_release(q);
-}
-
-// cfArrayAppendCFString appends a CFStringRef to a CFMutableArrayRef,
-// avoiding an unsafe.Pointer cast that triggers go vet warnings.
-static void cfArrayAppendCFString(CFMutableArrayRef a, CFStringRef s) {
-	CFArrayAppendValue(a, s);
-}
-*/
-import "C"
 
 import (
 	"fmt"
@@ -73,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/ebitengine/purego"
 )
 
 // Stream-level event flags.
@@ -90,9 +27,6 @@ const (
 	fseItemModified     = 0x00001000
 	fseItemChangeOwner  = 0x00004000
 	fseItemXattrMod     = 0x00008000
-	fseItemIsFile       = 0x00010000
-	fseItemIsDir        = 0x00020000
-	fseItemIsSymlink    = 0x00040000
 )
 
 // Create flags.
@@ -102,7 +36,91 @@ const (
 	fseCreateFileEvents = 0x10
 )
 
-const defaultLatency = 0.01 // 10ms
+const (
+	kCFStringEncodingUTF8          = 0x08000100
+	kFSEventStreamEventIdSinceNow  = ^uint64(0)
+	defaultLatency                 = 0.01 // 10ms
+)
+
+// fsEventStreamContext mirrors the C FSEventStreamContext struct layout.
+type fsEventStreamContext struct {
+	Version         int64   // CFIndex = long on 64-bit
+	Info            uintptr // void* — our watcher ID
+	Retain          uintptr // NULL
+	Release         uintptr // NULL
+	CopyDescription uintptr // NULL
+}
+
+// CoreFoundation / CoreServices / libdispatch functions loaded via purego.
+var (
+	_cfStringCreateWithCString func(alloc uintptr, cStr string, encoding uint32) uintptr
+	_cfArrayCreateMutable      func(alloc uintptr, capacity int64, callbacks uintptr) uintptr
+	_cfArrayAppendValue        func(arr uintptr, value uintptr)
+	_cfRelease                 func(ref uintptr)
+
+	_fseStreamCreate          func(alloc uintptr, callback uintptr, ctx *fsEventStreamContext, paths uintptr, sinceWhen uint64, latency float64, flags uint32) uintptr
+	_fseStreamSetDispatchQueue func(stream uintptr, queue uintptr)
+	_fseStreamStart            func(stream uintptr) uintptr
+	_fseStreamStop             func(stream uintptr)
+	_fseStreamInvalidate       func(stream uintptr)
+	_fseStreamRelease          func(stream uintptr)
+
+	_dispatchQueueCreate func(label string, attr uintptr) uintptr
+	_dispatchRelease     func(queue uintptr)
+
+	// kCFTypeArrayCallBacks symbol address
+	cfTypeArrayCallBacks uintptr
+)
+
+var (
+	fseInitOnce sync.Once
+	fseInitErr  error
+)
+
+func initFSEvents() error {
+	fseInitOnce.Do(func() {
+		fseInitErr = doInitFSEvents()
+	})
+	return fseInitErr
+}
+
+func doInitFSEvents() error {
+	cf, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return fmt.Errorf("fsnotify: load CoreFoundation: %w", err)
+	}
+	cs, err := purego.Dlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return fmt.Errorf("fsnotify: load CoreServices: %w", err)
+	}
+	ls, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
+	if err != nil {
+		return fmt.Errorf("fsnotify: load libSystem: %w", err)
+	}
+
+	purego.RegisterLibFunc(&_cfStringCreateWithCString, cf, "CFStringCreateWithCString")
+	purego.RegisterLibFunc(&_cfArrayCreateMutable, cf, "CFArrayCreateMutable")
+	purego.RegisterLibFunc(&_cfArrayAppendValue, cf, "CFArrayAppendValue")
+	purego.RegisterLibFunc(&_cfRelease, cf, "CFRelease")
+
+	purego.RegisterLibFunc(&_fseStreamCreate, cs, "FSEventStreamCreate")
+	purego.RegisterLibFunc(&_fseStreamSetDispatchQueue, cs, "FSEventStreamSetDispatchQueue")
+	purego.RegisterLibFunc(&_fseStreamStart, cs, "FSEventStreamStart")
+	purego.RegisterLibFunc(&_fseStreamStop, cs, "FSEventStreamStop")
+	purego.RegisterLibFunc(&_fseStreamInvalidate, cs, "FSEventStreamInvalidate")
+	purego.RegisterLibFunc(&_fseStreamRelease, cs, "FSEventStreamRelease")
+
+	purego.RegisterLibFunc(&_dispatchQueueCreate, ls, "dispatch_queue_create")
+	purego.RegisterLibFunc(&_dispatchRelease, ls, "dispatch_release")
+
+	sym, err := purego.Dlsym(cf, "kCFTypeArrayCallBacks")
+	if err != nil {
+		return fmt.Errorf("fsnotify: lookup kCFTypeArrayCallBacks: %w", err)
+	}
+	cfTypeArrayCallBacks = sym
+
+	return nil
+}
 
 // fseReg holds a snapshot of a registered stream's configuration, used
 // inside the callback to match events without holding the watcher lock.
@@ -114,7 +132,7 @@ type fseReg struct {
 
 // fsStream represents a single FSEventStream for one Add/AddRecursive call.
 type fsStream struct {
-	stream    C.FSEventStreamRef
+	stream    uintptr // FSEventStreamRef
 	path      string
 	op        Op
 	recursive bool
@@ -129,17 +147,17 @@ type Watcher struct {
 
 	mu       sync.Mutex
 	id       uintptr
-	queue    C.dispatch_queue_t
-	streams  map[string]*fsStream // keyed by pathKey
-	cleanupW sync.WaitGroup       // tracks async stream cleanup goroutines
+	queue    uintptr // dispatch_queue_t
+	streams  map[string]*fsStream
+	cleanupW sync.WaitGroup
 	internal chan Event
 	closed   bool
 	done     chan struct{}
 	exited   chan struct{}
 }
 
-// Global registry maps watcher IDs to watchers so the C callback
-// can find the correct Go object. Access is serialised by registryMu.
+// Global registry maps watcher IDs to watchers so the callback
+// can find the correct Go object.
 var (
 	registryMu sync.Mutex
 	registry   = map[uintptr]*Watcher{}
@@ -166,11 +184,26 @@ func lookupWatcher(id uintptr) *Watcher {
 	return registry[id]
 }
 
+// fseCallback is the single global FSEvents callback function pointer.
+// All watchers share it; the clientInfo parameter identifies the watcher.
+var fseCallback = purego.NewCallback(func(
+	streamRef uintptr,
+	clientInfo uintptr,
+	numEvents uintptr,
+	pathsPtr unsafe.Pointer,
+	flagsPtr unsafe.Pointer,
+	idsPtr unsafe.Pointer,
+) {
+	handleFSEventsCallback(clientInfo, int(numEvents), pathsPtr, flagsPtr)
+})
+
 // NewWatcher returns a Watcher backed by macOS FSEvents.
 func NewWatcher() (*Watcher, error) {
-	label := C.CString("github.com/gofsnotify/fsnotify")
-	defer C.free(unsafe.Pointer(label))
-	queue := C.dispatch_queue_create(label, nil) // serial queue
+	if err := initFSEvents(); err != nil {
+		return nil, err
+	}
+
+	queue := _dispatchQueueCreate("github.com/gofsnotify/fsnotify\x00", 0)
 
 	w := &Watcher{
 		Events:   make(chan Event, 64),
@@ -253,36 +286,35 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	return nil
 }
 
-func (w *Watcher) createStreamLocked(path string) (C.FSEventStreamRef, error) {
-	cPath := C.CString(path)
-	defer C.free(unsafe.Pointer(cPath))
-	cfPath := C.CFStringCreateWithCString(0, cPath, C.kCFStringEncodingUTF8)
-	defer C.CFRelease(C.CFTypeRef(cfPath))
+func (w *Watcher) createStreamLocked(path string) (uintptr, error) {
+	cfPath := _cfStringCreateWithCString(0, path, kCFStringEncodingUTF8)
+	defer _cfRelease(cfPath)
 
-	pathArray := C.CFArrayCreateMutable(0, 1, &C.kCFTypeArrayCallBacks)
-	defer C.CFRelease(C.CFTypeRef(pathArray))
-	C.cfArrayAppendCFString(pathArray, cfPath)
+	pathArray := _cfArrayCreateMutable(0, 1, cfTypeArrayCallBacks)
+	defer _cfRelease(pathArray)
+	_cfArrayAppendValue(pathArray, cfPath)
 
-	flags := C.FSEventStreamCreateFlags(
-		fseCreateFileEvents | fseCreateNoDefer | fseCreateWatchRoot,
-	)
+	ctx := fsEventStreamContext{Info: w.id}
+	flags := uint32(fseCreateFileEvents | fseCreateNoDefer | fseCreateWatchRoot)
 
-	stream := C.createStream(
-		C.uintptr_t(w.id),
-		C.CFArrayRef(pathArray),
-		C.FSEventStreamEventId(C.kFSEventStreamEventIdSinceNow),
-		C.CFTimeInterval(defaultLatency),
+	stream := _fseStreamCreate(
+		0,
+		fseCallback,
+		&ctx,
+		pathArray,
+		kFSEventStreamEventIdSinceNow,
+		defaultLatency,
 		flags,
 	)
-	if stream == nil {
-		return nil, fmt.Errorf("FSEventStreamCreate failed")
+	if stream == 0 {
+		return 0, fmt.Errorf("FSEventStreamCreate failed")
 	}
 
-	C.FSEventStreamSetDispatchQueue(stream, w.queue)
-	if C.FSEventStreamStart(stream) == 0 {
-		C.FSEventStreamInvalidate(stream)
-		C.FSEventStreamRelease(stream)
-		return nil, fmt.Errorf("FSEventStreamStart failed")
+	_fseStreamSetDispatchQueue(stream, w.queue)
+	if _fseStreamStart(stream) == 0 {
+		_fseStreamInvalidate(stream)
+		_fseStreamRelease(stream)
+		return 0, fmt.Errorf("FSEventStreamStart failed")
 	}
 	return stream, nil
 }
@@ -309,8 +341,6 @@ func (w *Watcher) Remove(path string) error {
 	stream := fs.stream
 	w.mu.Unlock()
 
-	// Stop outside the lock to avoid deadlocking with a callback that
-	// needs w.mu.
 	stopStream(stream)
 	return nil
 }
@@ -326,11 +356,9 @@ func (w *Watcher) Close() error {
 		return nil
 	}
 	w.closed = true
-	// Close done first so in-flight callbacks' sendEvent calls unblock.
 	close(w.done)
 
-	// Collect streams to stop; clear the map while holding the lock.
-	streams := make([]C.FSEventStreamRef, 0, len(w.streams))
+	streams := make([]uintptr, 0, len(w.streams))
 	for _, fs := range w.streams {
 		streams = append(streams, fs.stream)
 	}
@@ -339,43 +367,29 @@ func (w *Watcher) Close() error {
 	id := w.id
 	w.mu.Unlock()
 
-	// Stop streams outside the lock.
 	for _, s := range streams {
 		stopStream(s)
 	}
 
-	// Wait for any async root-change cleanup goroutines.
 	w.cleanupW.Wait()
-
 	<-w.exited
-	C.releaseQueue(queue)
+	_dispatchRelease(queue)
 	unregisterWatcher(id)
 	return nil
 }
 
-func stopStream(stream C.FSEventStreamRef) {
-	C.FSEventStreamStop(stream)
-	C.FSEventStreamInvalidate(stream)
-	C.FSEventStreamRelease(stream)
+func stopStream(stream uintptr) {
+	_fseStreamStop(stream)
+	_fseStreamInvalidate(stream)
+	_fseStreamRelease(stream)
 }
 
-//export goFSEventsCallback
-func goFSEventsCallback(
-	info C.uintptr_t,
-	numEvents C.size_t,
-	cpaths **C.char,
-	cflags *C.FSEventStreamEventFlags,
-	cids *C.FSEventStreamEventId,
-) {
-	w := lookupWatcher(uintptr(info))
+// handleFSEventsCallback processes a batch of FSEvents notifications.
+func handleFSEventsCallback(clientInfo uintptr, n int, pathsPtr, flagsPtr unsafe.Pointer) {
+	w := lookupWatcher(clientInfo)
 	if w == nil {
 		return
 	}
-
-	n := int(numEvents)
-	paths := unsafe.Slice(cpaths, n)
-	flags := unsafe.Slice(cflags, n)
-	_ = unsafe.Slice(cids, n) // ids unused for now
 
 	w.mu.Lock()
 	closed := w.closed
@@ -392,37 +406,35 @@ func goFSEventsCallback(
 		return
 	}
 
-	for i := 0; i < n; i++ {
-		p := C.GoString(paths[i])
-		f := uint32(flags[i])
+	ptrSize := unsafe.Sizeof(uintptr(0))
 
-		// Canonicalize the event path for consistent matching.
+	for i := 0; i < n; i++ {
+		// Read char* from the paths array (char**) without uintptr→unsafe.Pointer.
+		cStr := *(*unsafe.Pointer)(unsafe.Add(pathsPtr, uintptr(i)*ptrSize))
+		p := goString(cStr)
+		f := *(*uint32)(unsafe.Add(flagsPtr, uintptr(i)*4))
+
 		if abs, err := canonicalize(p); err == nil {
 			p = abs
 		}
 
-		// Handle MustScanSubDirs: events were coalesced/dropped.
 		if f&fseMustScanSubs != 0 {
 			w.sendError(fmt.Errorf("fsnotify: events may have been dropped for %s", p))
 		}
 
-		// Find the most specific registration covering this event.
 		r, ok := matchRegistration(p, regs)
 		if !ok {
 			continue
 		}
 
-		// Handle RootChanged: the watched path was deleted/renamed.
-		// Must be checked before the depth filter since RootChanged events
-		// always target the watched root itself (p == r.path).
+		// Handle RootChanged before the depth filter since RootChanged
+		// events always target the watched root itself (p == r.path).
 		if f&fseRootChanged != 0 {
 			w.mu.Lock()
 			if !w.closed {
 				key := pathKey(r.path)
 				if fs, exists := w.streams[key]; exists {
 					delete(w.streams, key)
-					// Cannot call stopStream here (would deadlock on the
-					// serial dispatch queue). Schedule cleanup async.
 					w.cleanupW.Add(1)
 					go func() {
 						defer w.cleanupW.Done()
@@ -432,7 +444,6 @@ func goFSEventsCallback(
 			}
 			w.mu.Unlock()
 
-			// Derive op from item-level flags when available.
 			op := fseventFlagsToOp(f) & r.op
 			if op == 0 && r.op.Has(Remove) {
 				op = Remove
@@ -443,11 +454,8 @@ func goFSEventsCallback(
 			continue
 		}
 
-		// For non-recursive watches, only emit events for direct children
-		// of the watched directory (not the directory itself — its own
-		// metadata changes are noise, matching kqueue behaviour).
-		// For recursive watches, suppress events for the root path itself
-		// for the same reason; child directories still pass through.
+		// Suppress events for the watched root — its metadata changes
+		// are noise. Child events pass through.
 		if p == r.path {
 			continue
 		}
@@ -467,8 +475,7 @@ func goFSEventsCallback(
 }
 
 // matchRegistration finds the most specific (longest path) registration
-// that covers the event path p. This ensures that nested registrations
-// (e.g. /root and /root/sub) are resolved correctly.
+// that covers the event path p.
 func matchRegistration(p string, regs []fseReg) (fseReg, bool) {
 	pk := pathKey(p)
 	var best fseReg
@@ -485,7 +492,6 @@ func matchRegistration(p string, regs []fseReg) (fseReg, bool) {
 	return best, found
 }
 
-// isUnder reports whether child is a path under parent.
 func isUnder(child, parent string) bool {
 	if parent == "/" {
 		return true
@@ -525,4 +531,18 @@ func fseventFlagsToOp(f uint32) Op {
 		op |= Chmod
 	}
 	return op
+}
+
+// goString reads a null-terminated C string from ptr without cgo.
+func goString(p unsafe.Pointer) string {
+	if p == nil {
+		return ""
+	}
+	n := 0
+	for *(*byte)(unsafe.Add(p, n)) != 0 {
+		n++
+	}
+	b := make([]byte, n)
+	copy(b, unsafe.Slice((*byte)(p), n))
+	return string(b)
 }
