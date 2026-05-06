@@ -1,6 +1,7 @@
 # fsnotify
 
 [![CI](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml/badge.svg)](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/gofsnotify/fsnotify.svg)](https://pkg.go.dev/github.com/gofsnotify/fsnotify)
 
 Cross-platform file system notifications for Go.
 
