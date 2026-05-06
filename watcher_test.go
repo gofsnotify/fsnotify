@@ -1,5 +1,3 @@
-//go:build linux
-
 package fsnotify
 
 import (
@@ -182,5 +180,112 @@ func TestOpFilterIgnoresOthers(t *testing.T) {
 		case <-timer.C:
 			return
 		}
+	}
+}
+
+func TestWatchRename(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old.txt")
+	newPath := filepath.Join(dir, "new.txt")
+	if err := os.WriteFile(oldPath, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.Add(dir, Rename); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+
+	ev := waitOp(t, w, Rename)
+	if ev.Name != oldPath {
+		t.Errorf("Name = %q, want %q", ev.Name, oldPath)
+	}
+}
+
+func TestWatchChmod(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(target, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.Add(dir, Chmod); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := os.Chmod(target, 0o600); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+
+	ev := waitOp(t, w, Chmod)
+	if ev.Name != target {
+		t.Errorf("Name = %q, want %q", ev.Name, target)
+	}
+}
+
+func TestMultiplePaths(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+
+	w := newWatcher(t)
+	if err := w.Add(dirA, Create); err != nil {
+		t.Fatalf("Add A: %v", err)
+	}
+	if err := w.Add(dirB, Create); err != nil {
+		t.Fatalf("Add B: %v", err)
+	}
+
+	fileA := filepath.Join(dirA, "a.txt")
+	fileB := filepath.Join(dirB, "b.txt")
+	if err := os.WriteFile(fileA, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile A: %v", err)
+	}
+	if err := os.WriteFile(fileB, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile B: %v", err)
+	}
+
+	got := map[string]bool{}
+	deadline := time.NewTimer(eventTimeout)
+	defer deadline.Stop()
+	for len(got) < 2 {
+		select {
+		case ev := <-w.Events:
+			if ev.Op.Has(Create) {
+				got[ev.Name] = true
+			}
+		case <-deadline.C:
+			t.Fatalf("timeout: got %v", got)
+		}
+	}
+	if !got[fileA] || !got[fileB] {
+		t.Errorf("missing events: got %v", got)
+	}
+}
+
+func TestRemoveStopsEvents(t *testing.T) {
+	dir := t.TempDir()
+	w := newWatcher(t)
+	if err := w.Add(dir, Create); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := w.Remove(dir); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case ev := <-w.Events:
+		t.Fatalf("unexpected event after Remove: %s", ev)
+	case <-timer.C:
 	}
 }
