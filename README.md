@@ -5,7 +5,7 @@ Cross-platform file system notifications for Go.
 ## Install
 
 ```
-go get github.com/mattn/fsnotify
+go get github.com/gofsnotify/fsnotify
 ```
 
 ## Usage
@@ -16,7 +16,7 @@ package main
 import (
 	"log"
 
-	"github.com/mattn/fsnotify"
+	"github.com/gofsnotify/fsnotify"
 )
 
 func main() {
