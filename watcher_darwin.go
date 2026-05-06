@@ -63,16 +63,18 @@ func (w *Watcher) Add(path string, op Op) error {
 	if op == 0 {
 		op = All
 	}
-	abs, err := filepath.Abs(path)
+	abs, err := canonicalize(path)
 	if err != nil {
 		return err
 	}
+	key := pathKey(abs)
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return ErrClosed
 	}
-	if _, exists := w.roots[abs]; exists {
+	if _, exists := w.roots[key]; exists {
 		return ErrAlreadyAdded
 	}
 	root, err := w.openLocked(abs, op, nil)
@@ -92,26 +94,28 @@ func (w *Watcher) Add(path string, op Op) error {
 			}
 		}
 	}
-	w.roots[abs] = root
+	w.roots[key] = root
 	return nil
 }
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
 func (w *Watcher) Remove(path string) error {
-	abs, err := filepath.Abs(path)
+	abs, err := canonicalize(path)
 	if err != nil {
 		return err
 	}
+	key := pathKey(abs)
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return ErrClosed
 	}
-	root, ok := w.roots[abs]
+	root, ok := w.roots[key]
 	if !ok {
 		return ErrNotAdded
 	}
-	delete(w.roots, abs)
+	delete(w.roots, key)
 	w.closeTreeLocked(root)
 	return nil
 }

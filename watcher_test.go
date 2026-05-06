@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -289,5 +291,100 @@ func TestRemoveStopsEvents(t *testing.T) {
 	case ev := <-w.Events:
 		t.Fatalf("unexpected event after Remove: %s", ev)
 	case <-timer.C:
+	}
+}
+
+func TestCanonicalize(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	got, err := canonicalize(".")
+	if err != nil {
+		t.Fatalf("canonicalize(.): %v", err)
+	}
+	if got != cwd {
+		t.Errorf("canonicalize(.) = %q, want %q", got, cwd)
+	}
+
+	got, err = canonicalize("foo/../bar")
+	if err != nil {
+		t.Fatalf("canonicalize: %v", err)
+	}
+	want := filepath.Join(cwd, "bar")
+	if got != want {
+		t.Errorf("canonicalize(foo/../bar) = %q, want %q", got, want)
+	}
+}
+
+func TestAddRelativePath(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Dir(dir)
+	base := filepath.Base(dir)
+
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(parent); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+
+	w := newWatcher(t)
+	if err := w.Add(base, Create); err != nil {
+		t.Fatalf("Add(relative): %v", err)
+	}
+
+	target := filepath.Join(dir, "x.txt")
+	if err := os.WriteFile(target, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ev := waitOp(t, w, Create)
+	if !filepath.IsAbs(ev.Name) {
+		t.Errorf("Event.Name not absolute: %q", ev.Name)
+	}
+}
+
+func TestAddDuplicateAcrossForms(t *testing.T) {
+	dir := t.TempDir()
+	w := newWatcher(t)
+	if err := w.Add(dir, All); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	withSlash := dir + string(os.PathSeparator)
+	if err := w.Add(withSlash, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(trailing-slash) = %v, want ErrAlreadyAdded", err)
+	}
+
+	viaDot := filepath.Join(dir, ".")
+	if err := w.Add(viaDot, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(./) = %v, want ErrAlreadyAdded", err)
+	}
+
+	if err := w.Remove(viaDot); err != nil {
+		t.Errorf("Remove(./) = %v, want nil", err)
+	}
+}
+
+func TestAddCaseInsensitiveOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only")
+	}
+	dir := t.TempDir()
+	w := newWatcher(t)
+	if err := w.Add(dir, All); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	upper := strings.ToUpper(dir)
+	if err := w.Add(upper, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(uppercased) = %v, want ErrAlreadyAdded", err)
+	}
+	if err := w.Remove(upper); err != nil {
+		t.Errorf("Remove(uppercased) = %v, want nil", err)
 	}
 }

@@ -76,10 +76,11 @@ func (w *Watcher) Add(path string, op Op) error {
 	if op == 0 {
 		op = All
 	}
-	abs, err := filepath.Abs(path)
+	abs, err := canonicalize(path)
 	if err != nil {
 		return err
 	}
+	cmpKey := pathKey(abs)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -87,7 +88,7 @@ func (w *Watcher) Add(path string, op Op) error {
 		return ErrClosed
 	}
 	for _, ww := range w.watches {
-		if ww.path == abs {
+		if pathKey(ww.path) == cmpKey {
 			return ErrAlreadyAdded
 		}
 	}
@@ -131,17 +132,19 @@ func (w *Watcher) Add(path string, op Op) error {
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
 func (w *Watcher) Remove(path string) error {
-	abs, err := filepath.Abs(path)
+	abs, err := canonicalize(path)
 	if err != nil {
 		return err
 	}
+	cmpKey := pathKey(abs)
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return ErrClosed
 	}
 	for k, ww := range w.watches {
-		if ww.path == abs {
+		if pathKey(ww.path) == cmpKey {
 			delete(w.watches, k)
 			return syscall.CloseHandle(ww.handle)
 		}

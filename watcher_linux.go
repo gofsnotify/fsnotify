@@ -18,13 +18,18 @@ type Watcher struct {
 	// Errors delivers non-fatal errors from the read loop. Closed when Close returns.
 	Errors chan error
 
-	mu       sync.Mutex
-	fd       int
-	wdToPath map[int32]string
-	pathToWd map[string]int32
-	pathToOp map[string]Op
-	closed   bool
-	done     chan struct{}
+	mu      sync.Mutex
+	fd      int
+	watches map[string]*linuxWatch
+	wdToKey map[int32]string
+	closed  bool
+	done    chan struct{}
+}
+
+type linuxWatch struct {
+	abs string
+	wd  int32
+	op  Op
 }
 
 // NewWatcher returns a Watcher backed by Linux inotify.
@@ -34,13 +39,12 @@ func NewWatcher() (*Watcher, error) {
 		return nil, err
 	}
 	w := &Watcher{
-		Events:   make(chan Event, 64),
-		Errors:   make(chan error, 8),
-		fd:       fd,
-		wdToPath: make(map[int32]string),
-		pathToWd: make(map[string]int32),
-		pathToOp: make(map[string]Op),
-		done:     make(chan struct{}),
+		Events:  make(chan Event, 64),
+		Errors:  make(chan error, 8),
+		fd:      fd,
+		watches: make(map[string]*linuxWatch),
+		wdToKey: make(map[int32]string),
+		done:    make(chan struct{}),
 	}
 	go w.readLoop()
 	return w, nil
@@ -52,42 +56,52 @@ func (w *Watcher) Add(path string, op Op) error {
 	if op == 0 {
 		op = All
 	}
+	abs, err := canonicalize(path)
+	if err != nil {
+		return err
+	}
+	key := pathKey(abs)
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return ErrClosed
 	}
-	if _, ok := w.pathToWd[path]; ok {
+	if _, ok := w.watches[key]; ok {
 		return ErrAlreadyAdded
 	}
-	wd, err := syscall.InotifyAddWatch(w.fd, path, opToMask(op))
+	wd, err := syscall.InotifyAddWatch(w.fd, abs, opToMask(op))
 	if err != nil {
 		return err
 	}
 	wd32 := int32(wd)
-	w.wdToPath[wd32] = path
-	w.pathToWd[path] = wd32
-	w.pathToOp[path] = op
+	w.watches[key] = &linuxWatch{abs: abs, wd: wd32, op: op}
+	w.wdToKey[wd32] = key
 	return nil
 }
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
 func (w *Watcher) Remove(path string) error {
+	abs, err := canonicalize(path)
+	if err != nil {
+		return err
+	}
+	key := pathKey(abs)
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return ErrClosed
 	}
-	wd, ok := w.pathToWd[path]
+	lw, ok := w.watches[key]
 	if !ok {
 		return ErrNotAdded
 	}
-	if _, err := syscall.InotifyRmWatch(w.fd, uint32(wd)); err != nil {
+	if _, err := syscall.InotifyRmWatch(w.fd, uint32(lw.wd)); err != nil {
 		return err
 	}
-	delete(w.wdToPath, wd)
-	delete(w.pathToWd, path)
-	delete(w.pathToOp, path)
+	delete(w.watches, key)
+	delete(w.wdToKey, lw.wd)
 	return nil
 }
 
@@ -154,21 +168,24 @@ func (w *Watcher) readLoop() {
 
 func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 	w.mu.Lock()
-	parent, ok := w.wdToPath[wd]
-	requested := w.pathToOp[parent]
+	key, ok := w.wdToKey[wd]
+	var lw *linuxWatch
+	if ok {
+		lw = w.watches[key]
+	}
 	w.mu.Unlock()
-	if !ok {
+	if lw == nil {
 		return
 	}
 
-	op := maskToOp(mask) & requested
+	op := maskToOp(mask) & lw.op
 	if op == 0 {
 		return
 	}
 
-	full := parent
+	full := lw.abs
 	if name != "" {
-		full = filepath.Join(parent, name)
+		full = filepath.Join(lw.abs, name)
 	}
 	select {
 	case w.Events <- Event{Name: full, Op: op}:
