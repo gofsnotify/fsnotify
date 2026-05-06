@@ -25,3 +25,20 @@ jobs:
           go-version: 'stable'
       - run: go vet ./...
       - run: go test -race ./...
+
+  test-freebsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Test on FreeBSD
+        uses: vmactions/freebsd-vm@d1e65811565151536c0c894fff74f06351ed26e6 # v1.4.5
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y go
+          run: |
+            go vet ./...
+            go test -race ./...
