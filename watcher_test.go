@@ -483,6 +483,89 @@ func TestConcurrentAddClose(t *testing.T) {
 	}
 }
 
+func TestAddRecursiveExistingTree(t *testing.T) {
+	root := tempDir(t)
+	nested := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	target := filepath.Join(nested, "deep.txt")
+	if err := os.WriteFile(target, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.AddRecursive(root, Write); err != nil {
+		t.Fatalf("AddRecursive: %v", err)
+	}
+
+	if err := os.WriteFile(target, []byte("changed"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ev := waitOp(t, w, Write)
+	if ev.Name != target {
+		t.Errorf("Name = %q, want %q", ev.Name, target)
+	}
+}
+
+func TestAddRecursiveNewDir(t *testing.T) {
+	root := tempDir(t)
+
+	w := newWatcher(t)
+	if err := w.AddRecursive(root, All); err != nil {
+		t.Fatalf("AddRecursive: %v", err)
+	}
+
+	newDir := filepath.Join(root, "newsub")
+	if err := os.Mkdir(newDir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	// Give the auto-watch a moment to register before creating the file.
+	time.Sleep(200 * time.Millisecond)
+
+	target := filepath.Join(newDir, "f.txt")
+	if err := os.WriteFile(target, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	deadline := time.NewTimer(eventTimeout)
+	defer deadline.Stop()
+	for {
+		select {
+		case ev := <-w.Events:
+			if ev.Name == target && ev.Op.Has(Create) {
+				return
+			}
+		case err := <-w.Errors:
+			t.Fatalf("unexpected error: %v", err)
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for Create on file in auto-watched subdir")
+		}
+	}
+}
+
+func TestAddRecursiveRemoveDropsSubtree(t *testing.T) {
+	root := tempDir(t)
+	nested := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.AddRecursive(root, All); err != nil {
+		t.Fatalf("AddRecursive: %v", err)
+	}
+	if err := w.Remove(root); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	// Subdirectory should no longer be tracked.
+	if err := w.Add(nested, All); err != nil {
+		t.Errorf("Add(nested) after Remove(root) = %v, want nil", err)
+	}
+}
+
 func TestConcurrentAddDistinct(t *testing.T) {
 	w := newWatcher(t)
 	const n = 16

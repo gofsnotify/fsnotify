@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,10 +23,12 @@ type Watcher struct {
 
 	mu      sync.Mutex
 	fd      int
+	file    *os.File
 	watches map[string]*linuxWatch
 	wdToKey map[int32]string
 	closed  bool
 	done    chan struct{}
+	exited  chan struct{}
 }
 
 type linuxWatch struct {
@@ -38,7 +41,9 @@ type linuxWatch struct {
 
 // NewWatcher returns a Watcher backed by Linux inotify.
 func NewWatcher() (*Watcher, error) {
-	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC)
+	// IN_NONBLOCK keeps the fd pollable through Go's runtime poller so
+	// closing the *os.File wrapper reliably unblocks a pending Read.
+	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC | syscall.IN_NONBLOCK)
 	if err != nil {
 		return nil, err
 	}
@@ -46,9 +51,11 @@ func NewWatcher() (*Watcher, error) {
 		Events:  make(chan Event, 64),
 		Errors:  make(chan error, 8),
 		fd:      fd,
+		file:    os.NewFile(uintptr(fd), "inotify"),
 		watches: make(map[string]*linuxWatch),
 		wdToKey: make(map[int32]string),
 		done:    make(chan struct{}),
+		exited:  make(chan struct{}),
 	}
 	go w.readLoop()
 	return w, nil
@@ -146,7 +153,10 @@ func (w *Watcher) Remove(path string) error {
 	if w.closed {
 		return ErrClosed
 	}
-	if _, ok := w.watches[key]; !ok {
+	root, ok := w.watches[key]
+	if !ok || root.rootKey != key {
+		// Not a user-Add'd root; sub-watches added by AddRecursive
+		// cannot be removed independently of their root.
 		return ErrNotAdded
 	}
 	var toRemove []*linuxWatch
@@ -163,38 +173,46 @@ func (w *Watcher) Remove(path string) error {
 	return nil
 }
 
-// Close stops the watcher. Subsequent calls are no-ops. The Events and
-// Errors channels are closed once the read loop exits.
+// Close stops the watcher. Subsequent calls are no-ops. Close blocks
+// until the read loop has fully exited so the kernel cannot reuse the
+// inotify fd while a stale goroutine is still reading from it.
 func (w *Watcher) Close() error {
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
+		<-w.exited
 		return nil
 	}
 	w.closed = true
 	close(w.done)
-	fd := w.fd
+	file := w.file
 	w.mu.Unlock()
-	return syscall.Close(fd)
+	// Closing the *os.File wakes the goroutine's blocking Read via the
+	// runtime poller, unlike syscall.Close which can leave it stuck.
+	err := file.Close()
+	<-w.exited
+	return err
 }
 
 func (w *Watcher) readLoop() {
+	defer close(w.exited)
 	defer close(w.Events)
 	defer close(w.Errors)
 
 	var buf [4096]byte
 	for {
-		n, err := syscall.Read(w.fd, buf[:])
+		n, err := w.file.Read(buf[:])
 		if err != nil {
-			if errors.Is(err, syscall.EBADF) || errors.Is(err, syscall.EINTR) {
-				select {
-				case <-w.done:
-					return
-				default:
-				}
-				if errors.Is(err, syscall.EINTR) {
-					continue
-				}
+			select {
+			case <-w.done:
+				return
+			default:
+			}
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			// os.ErrClosed surfaces when Close calls file.Close().
+			if errors.Is(err, os.ErrClosed) {
 				return
 			}
 			w.sendError(err)
@@ -266,15 +284,21 @@ func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 	// keep seeing events as the tree grows. Walk into it in case it
 	// already contains pre-existing children (e.g. it was renamed in).
 	if recursive && mask&syscall.IN_CREATE != 0 && mask&syscall.IN_ISDIR != 0 {
+		var addErr error
 		w.mu.Lock()
 		if !w.closed {
 			if _, exists := w.watches[pathKey(full)]; !exists {
-				if _, err := w.addWatchLocked(full, lw.op, rootKey, false); err == nil {
+				if _, err := w.addWatchLocked(full, lw.op, rootKey, false); err != nil {
+					addErr = err
+				} else {
 					w.walkAndAddLocked(full, lw.op, rootKey)
 				}
 			}
 		}
 		w.mu.Unlock()
+		if addErr != nil {
+			w.sendError(fmt.Errorf("fsnotify: auto-watch %s: %w", full, addErr))
+		}
 	}
 
 	op := maskToOp(mask) & lw.op
