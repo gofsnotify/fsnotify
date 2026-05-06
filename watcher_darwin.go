@@ -275,20 +275,17 @@ func (w *Watcher) handleEvent(ev *syscall.Kevent_t) {
 
 	if fflags&(syscall.NOTE_DELETE|syscall.NOTE_RENAME) != 0 {
 		w.mu.Lock()
-		delete(w.byFd, fd)
 		if parent != nil {
 			delete(parent.children, filepath.Base(path))
 		} else {
-			// Root watch went away; drop it from the user-facing map and
-			// release any tracked children so the path can be re-added.
+			// Root watch went away; drop it from the user-facing map so
+			// the path can be re-added.
 			delete(w.roots, pathKey(path))
-			for _, c := range ww.children {
-				delete(w.byFd, c.fd)
-				syscall.Close(c.fd)
-			}
 		}
+		// Recursively close the dropped node and every descendant so deep
+		// subtrees do not leak fds when an interior directory disappears.
+		w.closeTreeLocked(ww)
 		w.mu.Unlock()
-		syscall.Close(fd)
 	}
 }
 
