@@ -13,6 +13,7 @@ func canonicalize(p string) (string, error) {
 		return "", err
 	}
 	cleaned := filepath.Clean(abs)
+	cleaned = canonicalizeOS(cleaned)
 	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
 		return resolved, nil
 	}
