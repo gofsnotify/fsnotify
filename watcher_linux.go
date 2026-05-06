@@ -168,6 +168,19 @@ func (w *Watcher) readLoop() {
 }
 
 func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
+	// IN_IGNORED arrives when the kernel drops the watch (target deleted,
+	// filesystem unmounted, or after explicit InotifyRmWatch). Clean up
+	// our maps so the path can be re-added.
+	if mask&syscall.IN_IGNORED != 0 {
+		w.mu.Lock()
+		if key, ok := w.wdToKey[wd]; ok {
+			delete(w.watches, key)
+			delete(w.wdToKey, wd)
+		}
+		w.mu.Unlock()
+		return
+	}
+
 	w.mu.Lock()
 	key, ok := w.wdToKey[wd]
 	var lw *linuxWatch

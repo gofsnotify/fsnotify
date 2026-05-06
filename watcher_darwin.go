@@ -253,6 +253,14 @@ func (w *Watcher) handleEvent(ev *syscall.Kevent_t) {
 		delete(w.byFd, fd)
 		if parent != nil {
 			delete(parent.children, filepath.Base(path))
+		} else {
+			// Root watch went away; drop it from the user-facing map and
+			// release any tracked children so the path can be re-added.
+			delete(w.roots, pathKey(path))
+			for _, c := range ww.children {
+				delete(w.byFd, c.fd)
+				syscall.Close(c.fd)
+			}
 		}
 		w.mu.Unlock()
 		syscall.Close(fd)

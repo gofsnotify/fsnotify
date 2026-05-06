@@ -370,6 +370,36 @@ func TestAddDuplicateAcrossForms(t *testing.T) {
 	}
 }
 
+func TestWatchTargetDeletedThenRecreated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows pins open handles to deleted directories")
+	}
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "victim")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.Add(dir, All); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+
+	// Wait for the kernel notification that retires the watch.
+	time.Sleep(200 * time.Millisecond)
+
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("Mkdir (re-create): %v", err)
+	}
+	if err := w.Add(dir, All); err != nil {
+		t.Errorf("Add after delete+recreate = %v, want nil", err)
+	}
+}
+
 func TestSymlinkDeduplicates(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated privileges on Windows")
