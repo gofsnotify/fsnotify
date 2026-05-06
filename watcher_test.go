@@ -334,7 +334,10 @@ func TestCanonicalize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonicalize: %v", err)
 	}
-	want := filepath.Join(cwd, "bar")
+	// When using canonicalize() on a non-existent directory, EvalSymlinks
+	// doesn't work, so symbolic links in the current directory's path
+	// aren't expanded. Therefore, use rawCmd before expansion.
+	want := filepath.Join(rawCwd, "bar")
 	if got != want {
 		t.Errorf("canonicalize(foo/../bar) = %q, want %q", got, want)
 	}
