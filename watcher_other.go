@@ -1,4 +1,4 @@
-//go:build !linux && !windows && !darwin &&!freebsd
+//go:build !linux && !windows && !darwin && !freebsd
 
 package fsnotify
 
