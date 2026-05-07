@@ -425,6 +425,32 @@ func TestWatchTargetDeletedThenRecreated(t *testing.T) {
 	}
 }
 
+func TestWatchRootRenamed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows pins open handles to renamed directories")
+	}
+	parent := tempDir(t)
+	dir := filepath.Join(parent, "original")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.Add(dir, Rename); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	newDir := filepath.Join(parent, "renamed")
+	if err := os.Rename(dir, newDir); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+
+	ev := waitOp(t, w, Rename)
+	if ev.Name != dir {
+		t.Errorf("Name = %q, want %q", ev.Name, dir)
+	}
+}
+
 func TestSymlinkDeduplicates(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation requires elevated privileges on Windows")

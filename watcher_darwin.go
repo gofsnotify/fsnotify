@@ -37,9 +37,9 @@ const (
 )
 
 const (
-	kCFStringEncodingUTF8          = 0x08000100
-	kFSEventStreamEventIdSinceNow  = ^uint64(0)
-	defaultLatency                 = 0.01 // 10ms
+	kCFStringEncodingUTF8         = 0x08000100
+	kFSEventStreamEventIdSinceNow = ^uint64(0)
+	defaultLatency                = 0.01 // 10ms
 )
 
 // fsEventStreamContext mirrors the C FSEventStreamContext struct layout.
@@ -58,7 +58,7 @@ var (
 	_cfArrayAppendValue        func(arr uintptr, value uintptr)
 	_cfRelease                 func(ref uintptr)
 
-	_fseStreamCreate          func(alloc uintptr, callback uintptr, ctx *fsEventStreamContext, paths uintptr, sinceWhen uint64, latency float64, flags uint32) uintptr
+	_fseStreamCreate           func(alloc uintptr, callback uintptr, ctx *fsEventStreamContext, paths uintptr, sinceWhen uint64, latency float64, flags uint32) uintptr
 	_fseStreamSetDispatchQueue func(stream uintptr, queue uintptr)
 	_fseStreamStart            func(stream uintptr) uintptr
 	_fseStreamStop             func(stream uintptr)
@@ -445,8 +445,8 @@ func handleFSEventsCallback(clientInfo uintptr, n int, pathsPtr, flagsPtr unsafe
 			w.mu.Unlock()
 
 			op := fseventFlagsToOp(f) & r.op
-			if op == 0 && r.op.Has(Remove) {
-				op = Remove
+			if op == 0 {
+				op = (Rename | Remove) & r.op
 			}
 			if op != 0 {
 				w.sendEvent(Event{Name: r.path, Op: op})
