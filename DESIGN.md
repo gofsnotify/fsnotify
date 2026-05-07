@@ -74,24 +74,19 @@ timeout grows rather than `-race` getting dropped.
 
 ## Platform support
 
-| OS      | Backend                | Status    |
-|---------|------------------------|-----------|
-| Linux   | inotify                | Supported |
-| Windows | ReadDirectoryChangesW  | Supported |
-| macOS   | FSEvents (cgo)         | Supported |
-| macOS   | kqueue (CGO_ENABLED=0) | Supported |
-| FreeBSD | kqueue                 | Supported |
-| other   | stub returning `ErrUnsupported` | — |
+| OS      | Backend                         | Status    |
+|---------|---------------------------------|-----------|
+| Linux   | inotify                         | Supported |
+| Windows | ReadDirectoryChangesW           | Supported |
+| macOS   | FSEvents (purego)               | Supported |
+| FreeBSD | kqueue                          | Supported |
+| other   | stub returning `ErrUnsupported` | —         |
 
-### macOS backend selection
+### macOS backend
 
-On macOS, the default backend is FSEvents (requires cgo, which is
-enabled by default). FSEvents monitors paths at the volume level
-without opening a file descriptor per watched entry, and supports
-native recursive watching — `AddRecursive` creates a single stream
+On macOS the backend is FSEvents, called through
+[`purego`](https://github.com/ebitengine/purego) so cgo is not
+required. FSEvents monitors paths at the volume level without
+opening a file descriptor per watched entry, and supports native
+recursive watching — `AddRecursive` creates a single stream
 regardless of tree depth.
-
-When building with `CGO_ENABLED=0`, the kqueue backend is used
-instead. It opens a file descriptor per watched file/directory and
-walks the tree manually for `AddRecursive`, but requires no cgo
-dependency.

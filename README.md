@@ -76,13 +76,12 @@ Paths are canonicalized (absolute, cleaned, with symlinks resolved when the targ
 
 ## Platform Support
 
-| OS      | Backend                | Status    |
-|---------|------------------------|-----------|
-| Linux   | inotify                | Supported |
-| Windows | ReadDirectoryChangesW  | Supported |
-| macOS   | FSEvents (cgo)         | Supported |
-| macOS   | kqueue (CGO_ENABLED=0) | Supported |
-| FreeBSD | kqueue                 | Supported |
+| OS      | Backend                 | Status    |
+|---------|-------------------------|-----------|
+| Linux   | inotify                 | Supported |
+| Windows | ReadDirectoryChangesW   | Supported |
+| macOS   | FSEvents (purego)       | Supported |
+| FreeBSD | kqueue                  | Supported |
 
 ## License
 
