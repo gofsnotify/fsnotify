@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Windows: drop the watch entry and close the directory handle when `ReadDirectoryChangesW` completes with `ERROR_OPERATION_ABORTED`/`ERROR_INVALID_HANDLE` so a deleted or disconnected watched root no longer leaks a `winWatch`; also surface a `Remove` event for the root, matching the other backends
+
 ## [0.0.4] - 2026-05-07
 
 ### Added

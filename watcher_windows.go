@@ -232,8 +232,13 @@ func (w *Watcher) readLoop() {
 		default:
 		}
 		if err != nil {
-			// Aborted reads come from CloseHandle on a watched directory; not fatal.
+			// Aborted/invalid-handle completions come from either an
+			// explicit Remove (already cleaned up) or the watched
+			// directory being deleted out from under us. In the latter
+			// case the entry is still in the map, so drop it to release
+			// the handle and surface a Remove event for the root.
 			if errors.Is(err, syscall.ERROR_OPERATION_ABORTED) || errors.Is(err, errorInvalidHandle) {
+				w.dropWatch(key)
 				continue
 			}
 			w.sendError(err)
@@ -291,6 +296,31 @@ func (w *Watcher) handleCompletion(key uint32, n uint32) {
 	if err := ww.startRead(); err != nil {
 		if !errors.Is(err, syscall.ERROR_OPERATION_ABORTED) {
 			w.sendError(err)
+		}
+	}
+}
+
+// dropWatch removes the watch entry for key if it is still present and
+// closes its handle. Called when ReadDirectoryChangesW completes with
+// an aborted/invalid-handle status so a deleted watched directory does
+// not leak its winWatch (handle, buffer, overlapped). Also surfaces a
+// Remove event for the root path when the user requested Remove and
+// the entry was still tracked, matching IN_DELETE_SELF on Linux.
+func (w *Watcher) dropWatch(key uint32) {
+	w.mu.Lock()
+	ww, ok := w.watches[key]
+	if ok {
+		delete(w.watches, key)
+	}
+	w.mu.Unlock()
+	if !ok {
+		return
+	}
+	syscall.CloseHandle(ww.handle)
+	if ww.op.Has(Remove) {
+		select {
+		case w.Events <- Event{Name: ww.path, Op: Remove}:
+		case <-w.done:
 		}
 	}
 }
