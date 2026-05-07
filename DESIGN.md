@@ -74,10 +74,19 @@ timeout grows rather than `-race` getting dropped.
 
 ## Platform support
 
-| OS      | Backend                | Status    |
-|---------|------------------------|-----------|
-| Linux   | inotify                | Supported |
-| Windows | ReadDirectoryChangesW  | Supported |
-| macOS   | FSEvents               | Supported |
-| FreeBSD | kqueue                 | Supported |
-| other   | stub returning `ErrUnsupported` | — |
+| OS      | Backend                         | Status    |
+|---------|---------------------------------|-----------|
+| Linux   | inotify                         | Supported |
+| Windows | ReadDirectoryChangesW           | Supported |
+| macOS   | FSEvents (purego)               | Supported |
+| FreeBSD | kqueue                          | Supported |
+| other   | stub returning `ErrUnsupported` | —         |
+
+### macOS backend
+
+On macOS the backend is FSEvents, called through
+[`purego`](https://github.com/ebitengine/purego) so cgo is not
+required. FSEvents monitors paths at the volume level without
+opening a file descriptor per watched entry, and supports native
+recursive watching — `AddRecursive` creates a single stream
+regardless of tree depth.
