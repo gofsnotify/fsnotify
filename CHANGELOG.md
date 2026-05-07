@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Do not resolve symbolic links for paths that do not exist (#7)
 - macOS: notify `Rename`-only registrations on `RootChanged` fallback so renames of the watched root are not lost (#11)
+- macOS: deliver events for `Add` on individual files; root-path suppression now only applies to directories (#12)
 - `TestCanonicalize` on systems where the working directory traverses a symlink
 
 ## [0.0.3] - 2026-05-06
