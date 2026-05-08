@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -18,7 +19,7 @@ const (
 	// FILE_NOTIFY_INFORMATION layout: 3 x uint32 then a flexible WCHAR[].
 	fileNotifyHeaderSize = 12
 	// ERROR_INVALID_HANDLE; not exposed by stdlib syscall.
-	errorInvalidHandle = syscall.Errno(6)
+	errorInvalidHandle = windows.Errno(6)
 )
 
 // fileNotifyInformation mirrors the Win32 FILE_NOTIFY_INFORMATION struct
@@ -38,16 +39,16 @@ type Watcher struct {
 	Errors chan error
 
 	mu      sync.Mutex
-	port    syscall.Handle
-	watches map[uint32]*winWatch
-	nextKey uint32
+	port    windows.Handle
+	watches map[uintptr]*winWatch
+	nextKey uintptr
 	closed  bool
 	done    chan struct{}
 	exited  chan struct{}
 }
 
 type winWatch struct {
-	handle syscall.Handle
+	handle windows.Handle
 	path   string
 	op     Op
 	mask   uint32
@@ -56,13 +57,13 @@ type winWatch struct {
 	// offset on 64-bit Go and silently break the call. Keep buf early and
 	// push optional fields below overlapped.
 	buf        [watchBufferSize]byte
-	overlapped syscall.Overlapped
+	overlapped windows.Overlapped
 	recursive  bool
 }
 
 // NewWatcher returns a Watcher backed by ReadDirectoryChangesW.
 func NewWatcher() (*Watcher, error) {
-	port, err := syscall.CreateIoCompletionPort(syscall.InvalidHandle, 0, 0, 0)
+	port, err := windows.CreateIoCompletionPort(windows.InvalidHandle, 0, 0, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func NewWatcher() (*Watcher, error) {
 		Events:  make(chan Event, 64),
 		Errors:  make(chan error, 8),
 		port:    port,
-		watches: make(map[uint32]*winWatch),
+		watches: make(map[uintptr]*winWatch),
 		done:    make(chan struct{}),
 		exited:  make(chan struct{}),
 	}
@@ -113,17 +114,17 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 		}
 	}
 
-	pathPtr, err := syscall.UTF16PtrFromString(abs)
+	pathPtr, err := windows.UTF16PtrFromString(abs)
 	if err != nil {
 		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
-	handle, err := syscall.CreateFile(
+	handle, err := windows.CreateFile(
 		pathPtr,
 		fileListDirectory,
-		syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
 		nil,
-		syscall.OPEN_EXISTING,
-		syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OVERLAPPED,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OVERLAPPED,
 		0,
 	)
 	if err != nil {
@@ -131,8 +132,8 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	w.nextKey++
 	key := w.nextKey
-	if _, err := syscall.CreateIoCompletionPort(handle, w.port, key, 0); err != nil {
-		syscall.CloseHandle(handle)
+	if _, err := windows.CreateIoCompletionPort(handle, w.port, key, 0); err != nil {
+		windows.CloseHandle(handle)
 		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 
@@ -144,7 +145,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 		recursive: recursive,
 	}
 	if err := ww.startRead(); err != nil {
-		syscall.CloseHandle(handle)
+		windows.CloseHandle(handle)
 		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	w.watches[key] = ww
@@ -167,7 +168,7 @@ func (w *Watcher) Remove(path string) error {
 	for k, ww := range w.watches {
 		if pathKey(ww.path) == cmpKey {
 			delete(w.watches, k)
-			if err := syscall.CloseHandle(ww.handle); err != nil {
+			if err := windows.CloseHandle(ww.handle); err != nil {
 				return fmt.Errorf("fsnotify: remove %s: %w", abs, err)
 			}
 			return nil
@@ -189,20 +190,20 @@ func (w *Watcher) Close() error {
 	w.closed = true
 	close(w.done)
 	for _, ww := range w.watches {
-		syscall.CloseHandle(ww.handle)
+		windows.CloseHandle(ww.handle)
 	}
 	w.watches = nil
 	port := w.port
 	w.mu.Unlock()
 	// Wake any GetQueuedCompletionStatus waiter so the loop can observe done.
-	syscall.PostQueuedCompletionStatus(port, 0, 0, nil)
-	err := syscall.CloseHandle(port)
+	windows.PostQueuedCompletionStatus(port, 0, 0, nil)
+	err := windows.CloseHandle(port)
 	<-w.exited
 	return err
 }
 
 func (ww *winWatch) startRead() error {
-	return syscall.ReadDirectoryChanges(
+	return windows.ReadDirectoryChanges(
 		ww.handle,
 		&ww.buf[0],
 		uint32(len(ww.buf)),
@@ -222,10 +223,10 @@ func (w *Watcher) readLoop() {
 	for {
 		var (
 			bytesRead  uint32
-			key        uint32
-			overlapped *syscall.Overlapped
+			key        uintptr
+			overlapped *windows.Overlapped
 		)
-		err := syscall.GetQueuedCompletionStatus(w.port, &bytesRead, &key, &overlapped, syscall.INFINITE)
+		err := windows.GetQueuedCompletionStatus(w.port, &bytesRead, &key, &overlapped, windows.INFINITE)
 		select {
 		case <-w.done:
 			return
@@ -237,7 +238,7 @@ func (w *Watcher) readLoop() {
 			// directory being deleted out from under us. In the latter
 			// case the entry is still in the map, so drop it to release
 			// the handle and surface a Remove event for the root.
-			if errors.Is(err, syscall.ERROR_OPERATION_ABORTED) || errors.Is(err, errorInvalidHandle) {
+			if errors.Is(err, windows.ERROR_OPERATION_ABORTED) || errors.Is(err, errorInvalidHandle) {
 				w.dropWatch(key)
 				continue
 			}
@@ -251,7 +252,7 @@ func (w *Watcher) readLoop() {
 	}
 }
 
-func (w *Watcher) handleCompletion(key uint32, n uint32) {
+func (w *Watcher) handleCompletion(key uintptr, n uint32) {
 	w.mu.Lock()
 	ww, ok := w.watches[key]
 	w.mu.Unlock()
@@ -271,7 +272,7 @@ func (w *Watcher) handleCompletion(key uint32, n uint32) {
 		name := ""
 		if nameLen > 0 {
 			ptr := (*uint16)(unsafe.Pointer(&ww.buf[nameStart]))
-			name = syscall.UTF16ToString(unsafe.Slice(ptr, nameLen))
+			name = windows.UTF16ToString(unsafe.Slice(ptr, nameLen))
 		}
 
 		op := actionToOp(raw.Action, ww.op)
@@ -294,7 +295,7 @@ func (w *Watcher) handleCompletion(key uint32, n uint32) {
 	}
 
 	if err := ww.startRead(); err != nil {
-		if !errors.Is(err, syscall.ERROR_OPERATION_ABORTED) {
+		if !errors.Is(err, windows.ERROR_OPERATION_ABORTED) {
 			w.sendError(err)
 		}
 	}
@@ -306,7 +307,7 @@ func (w *Watcher) handleCompletion(key uint32, n uint32) {
 // not leak its winWatch (handle, buffer, overlapped). Also surfaces a
 // Remove event for the root path when the user requested Remove and
 // the entry was still tracked, matching IN_DELETE_SELF on Linux.
-func (w *Watcher) dropWatch(key uint32) {
+func (w *Watcher) dropWatch(key uintptr) {
 	w.mu.Lock()
 	ww, ok := w.watches[key]
 	if ok {
@@ -316,7 +317,7 @@ func (w *Watcher) dropWatch(key uint32) {
 	if !ok {
 		return
 	}
-	syscall.CloseHandle(ww.handle)
+	windows.CloseHandle(ww.handle)
 	if ww.op.Has(Remove) {
 		select {
 		case w.Events <- Event{Name: ww.path, Op: Remove}:
@@ -335,13 +336,13 @@ func (w *Watcher) sendError(err error) {
 func opToFilter(op Op) uint32 {
 	var f uint32
 	if op.Has(Create) || op.Has(Remove) || op.Has(Rename) {
-		f |= syscall.FILE_NOTIFY_CHANGE_FILE_NAME | syscall.FILE_NOTIFY_CHANGE_DIR_NAME
+		f |= windows.FILE_NOTIFY_CHANGE_FILE_NAME | windows.FILE_NOTIFY_CHANGE_DIR_NAME
 	}
 	if op.Has(Write) {
-		f |= syscall.FILE_NOTIFY_CHANGE_LAST_WRITE | syscall.FILE_NOTIFY_CHANGE_SIZE
+		f |= windows.FILE_NOTIFY_CHANGE_LAST_WRITE | windows.FILE_NOTIFY_CHANGE_SIZE
 	}
 	if op.Has(Chmod) {
-		f |= syscall.FILE_NOTIFY_CHANGE_ATTRIBUTES | fileNotifyChangeSecurity
+		f |= windows.FILE_NOTIFY_CHANGE_ATTRIBUTES | fileNotifyChangeSecurity
 	}
 	return f
 }
@@ -352,22 +353,22 @@ func opToFilter(op Op) uint32 {
 // surface it as Write or Chmod.
 func actionToOp(action uint32, requested Op) Op {
 	switch action {
-	case syscall.FILE_ACTION_ADDED, syscall.FILE_ACTION_RENAMED_NEW_NAME:
+	case windows.FILE_ACTION_ADDED, windows.FILE_ACTION_RENAMED_NEW_NAME:
 		if requested.Has(Create) {
 			return Create
 		}
-	case syscall.FILE_ACTION_REMOVED:
+	case windows.FILE_ACTION_REMOVED:
 		if requested.Has(Remove) {
 			return Remove
 		}
-	case syscall.FILE_ACTION_MODIFIED:
+	case windows.FILE_ACTION_MODIFIED:
 		if requested.Has(Write) {
 			return Write
 		}
 		if requested.Has(Chmod) {
 			return Chmod
 		}
-	case syscall.FILE_ACTION_RENAMED_OLD_NAME:
+	case windows.FILE_ACTION_RENAMED_OLD_NAME:
 		if requested.Has(Rename) {
 			return Rename
 		}

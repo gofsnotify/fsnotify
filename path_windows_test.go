@@ -52,7 +52,7 @@ func TestDropWatchReleasesEntry(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	var key uint32
+	var key uintptr
 	w.mu.Lock()
 	for k := range w.watches {
 		key = k
