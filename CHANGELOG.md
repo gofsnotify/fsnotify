@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-05-08
+
+### Added
+- `cmd/fsnotify` CLI for streaming events to stdout and running a command per change, with `-r` (recursive), `-V` (verbose), `-e CMD` (exec via platform shell with `FSNOTIFY_PATH`/`FSNOTIFY_OP` env), and `-json` (NDJSON output) (#22)
+
+### Changed
+- `Op.Has` now reports whether `op` contains any bit set in target instead of every bit, so `ev.Op.Has(Create | Write)` reads as "Create or Write" (#21)
+
 ### Fixed
-- Windows: drop the watch entry and close the directory handle when `ReadDirectoryChangesW` completes with `ERROR_OPERATION_ABORTED`/`ERROR_INVALID_HANDLE` so a deleted or disconnected watched root no longer leaks a `winWatch`; also surface a `Remove` event for the root, matching the other backends
+- Windows: drop the watch entry and close the directory handle when `ReadDirectoryChangesW` completes with `ERROR_OPERATION_ABORTED`/`ERROR_INVALID_HANDLE` so a deleted or disconnected watched root no longer leaks a `winWatch`; also surface a `Remove` event for the root, matching the other backends (#19)
 
 ## [0.0.4] - 2026-05-07
 
@@ -82,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tighten the `Chmod` test for Windows
 - Canonicalize temp directories in tests for cross-platform stability
 
-[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.5...HEAD
+[0.0.5]: https://github.com/gofsnotify/fsnotify/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/gofsnotify/fsnotify/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/gofsnotify/fsnotify/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/gofsnotify/fsnotify/compare/v0.0.1...v0.0.2
