@@ -151,15 +151,16 @@ type Watcher struct {
 	events chan<- Event
 	errors chan<- error
 
-	mu       sync.Mutex
-	id       uintptr
-	queue    uintptr // dispatch_queue_t
-	streams  map[string]*fsStream
-	cleanupW sync.WaitGroup
-	internal chan Event
-	closed   bool
-	done     chan struct{}
-	exited   chan struct{}
+	mu          sync.Mutex
+	id          uintptr
+	queue       uintptr // dispatch_queue_t
+	streams     map[string]*fsStream
+	cleanupW    sync.WaitGroup
+	internal    chan Event
+	internalErr chan error
+	closed      bool
+	done        chan struct{}
+	exited      chan struct{}
 }
 
 // Global registry maps watcher IDs to watchers so the callback
@@ -214,15 +215,16 @@ func NewWatcher() (*Watcher, error) {
 	events := make(chan Event, 64)
 	errors := make(chan error, 8)
 	w := &Watcher{
-		Events:   events,
-		Errors:   errors,
-		queue:    queue,
-		streams:  make(map[string]*fsStream),
-		internal: make(chan Event, 256),
-		done:     make(chan struct{}),
-		exited:   make(chan struct{}),
-		events:   events,
-		errors:   errors,
+		Events:      events,
+		Errors:      errors,
+		events:      events,
+		errors:      errors,
+		queue:       queue,
+		streams:     make(map[string]*fsStream),
+		internal:    make(chan Event, 256),
+		internalErr: make(chan error, 8),
+		done:        make(chan struct{}),
+		exited:      make(chan struct{}),
 	}
 	w.id = registerWatcher(w)
 	go w.readLoop()
@@ -242,6 +244,12 @@ func (w *Watcher) readLoop() {
 		case ev := <-w.internal:
 			select {
 			case w.events <- ev:
+			case <-w.done:
+				return
+			}
+		case err := <-w.internalErr:
+			select {
+			case w.errors <- err:
 			case <-w.done:
 				return
 			}
@@ -525,7 +533,7 @@ func (w *Watcher) sendEvent(e Event) {
 
 func (w *Watcher) sendError(err error) {
 	select {
-	case w.errors <- err:
+	case w.internalErr <- err:
 	case <-w.done:
 	}
 }
