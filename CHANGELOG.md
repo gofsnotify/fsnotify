@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-05-12
+
+### Added
+- macOS: case-insensitive and Unicode-normalization-insensitive path matching to mirror APFS, so `Add` deduplicates paths that differ only in case or normalization form (#28)
+
+### Changed
+- Make `Watcher.Events` and `Watcher.Errors` directional receive-only channels (`<-chan`) (#26)
+- Windows: replace deprecated `syscall` IOCP calls with `golang.org/x/sys/windows` equivalents (#24)
+- Configure Dependabot for Go module updates and tidy dependencies (#20)
+
+### Fixed
+- Linux/FreeBSD: synthesize `Create` events for nested directories created under an `AddRecursive` root (e.g. `mkdir -p a/b/c`) that the kernel does not report because the inner directories were not yet watched (#29, #30)
+- Race between `close(w.error)` and `w.error <- err` on `Close` (#26)
+
 ## [0.0.5] - 2026-05-08
 
 ### Added
@@ -90,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tighten the `Chmod` test for Windows
 - Canonicalize temp directories in tests for cross-platform stability
 
-[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/gofsnotify/fsnotify/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/gofsnotify/fsnotify/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/gofsnotify/fsnotify/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/gofsnotify/fsnotify/compare/v0.0.2...v0.0.3
