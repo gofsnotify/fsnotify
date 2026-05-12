@@ -97,6 +97,15 @@ func (w *Watcher) Add(path string, op Op) error {
 // subdirectories created inside path are watched automatically; removed
 // subdirectories are dropped on NOTE_DELETE. Returns ErrAlreadyAdded
 // if path is already registered.
+//
+// When a directory is created underneath an AddRecursive root, the
+// watcher attaches a watch to it and walks it for any pre-existing
+// descendants (for example after mkdir -p or after a populated subtree
+// is moved in) so that their Create events are not lost. If another
+// process concurrently creates entries inside the new directory in the
+// brief window between watch attachment and the walk, the same Create
+// may be reported twice; consumers should handle duplicate Create
+// events idempotently.
 func (w *Watcher) AddRecursive(path string, op Op) error {
 	return w.add(path, op, true)
 }
@@ -125,7 +134,10 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	root.recursive = recursive
 	if root.isDir {
-		w.populateChildrenLocked(root, recursive)
+		// Pre-existing descendants at registration time are intentionally
+		// silent — the user just asked us to start watching, so they are
+		// not new from the user's point of view.
+		_ = w.populateChildrenLocked(root, recursive)
 	}
 	w.roots[key] = root
 	return nil
@@ -133,12 +145,16 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 
 // populateChildrenLocked scans dir and registers a watch for every
 // immediate child. When recursive, descends into each child directory
-// so the entire subtree is covered. Caller holds w.mu.
-func (w *Watcher) populateChildrenLocked(dir *kqWatch, recursive bool) {
+// so the entire subtree is covered. Returns the absolute paths of
+// every entry (immediate children and descendants when recursive) that
+// was newly added on this call so callers can synthesize Create events
+// for them. Caller holds w.mu.
+func (w *Watcher) populateChildrenLocked(dir *kqWatch, recursive bool) []string {
 	entries, err := os.ReadDir(dir.path)
 	if err != nil {
-		return
+		return nil
 	}
+	var added []string
 	for _, e := range entries {
 		childPath := filepath.Join(dir.path, e.Name())
 		child, err := w.openLocked(childPath, dir.op, dir)
@@ -146,10 +162,12 @@ func (w *Watcher) populateChildrenLocked(dir *kqWatch, recursive bool) {
 			continue
 		}
 		dir.children[e.Name()] = child
+		added = append(added, childPath)
 		if recursive && child.isDir {
-			w.populateChildrenLocked(child, true)
+			added = append(added, w.populateChildrenLocked(child, true)...)
 		}
 	}
+	return added
 }
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
@@ -362,7 +380,10 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 		dir.children[name] = child
 		added = append(added, childPath)
 		if recursive && child.isDir {
-			w.populateChildrenLocked(child, true)
+			// mkdir -p (or a populated subtree moved in) lands all the
+			// nested entries before NOTE_WRITE reaches us; report them
+			// instead of attaching watches silently.
+			added = append(added, w.populateChildrenLocked(child, true)...)
 		}
 	}
 	w.mu.Unlock()

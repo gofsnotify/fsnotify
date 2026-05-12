@@ -79,6 +79,15 @@ func (w *Watcher) Add(path string, op Op) error {
 // subdirectories created inside path are watched automatically; subtrees
 // that disappear are dropped via the kernel's IN_IGNORED notification.
 // Returns ErrAlreadyAdded if path is already registered.
+//
+// When a directory is created underneath an AddRecursive root, the
+// watcher attaches an inotify watch to it and walks it for any
+// pre-existing descendants (for example after mkdir -p or after a
+// populated subtree is moved in) so that their Create events are not
+// lost. If another process concurrently creates entries inside the new
+// directory in the brief window between watch attachment and the walk,
+// the same Create may be reported twice; consumers should handle
+// duplicate Create events idempotently.
 func (w *Watcher) AddRecursive(path string, op Op) error {
 	return w.add(path, op, true)
 }
@@ -105,7 +114,10 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	if recursive {
-		w.walkAndAddLocked(abs, op, key)
+		// Pre-existing descendants at registration time are intentionally
+		// silent — the user just asked us to start watching, so they are
+		// not new from the user's point of view.
+		_ = w.walkAndAddLocked(abs, op, key)
 	}
 	return nil
 }
@@ -125,9 +137,12 @@ func (w *Watcher) addWatchLocked(abs string, op Op, rootKey string, recursive bo
 }
 
 // walkAndAddLocked walks root and adds an inotify watch for every
-// subdirectory. Best-effort: unreadable subtrees are skipped silently.
-// Caller holds w.mu.
-func (w *Watcher) walkAndAddLocked(root string, op Op, rootKey string) {
+// subdirectory. Returns the absolute paths of subdirectories that were
+// newly watched on this call (root itself excluded; entries that were
+// already watched are skipped). Best-effort: unreadable subtrees are
+// skipped silently. Caller holds w.mu.
+func (w *Watcher) walkAndAddLocked(root string, op Op, rootKey string) []string {
+	var added []string
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -141,9 +156,12 @@ func (w *Watcher) walkAndAddLocked(root string, op Op, rootKey string) {
 		if _, dup := w.watches[pathKey(p)]; dup {
 			return nil
 		}
-		_, _ = w.addWatchLocked(p, op, rootKey, false)
+		if _, err := w.addWatchLocked(p, op, rootKey, false); err == nil {
+			added = append(added, p)
+		}
 		return nil
 	})
+	return added
 }
 
 // Remove unregisters path. For an AddRecursive registration, every
@@ -290,7 +308,14 @@ func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 
 	// A new directory under a recursive root needs its own watch so we
 	// keep seeing events as the tree grows. Walk into it in case it
-	// already contains pre-existing children (e.g. it was renamed in).
+	// already contains pre-existing children (e.g. mkdir -p, or a
+	// populated subtree renamed in) and synthesize Create for each so
+	// they are not silently lost — inotify only reports the outermost
+	// directory in that situation. A concurrent writer creating entries
+	// in the brief window between watch attachment and the walk may
+	// cause the same Create to be reported twice; this is documented on
+	// AddRecursive.
+	var synth []string
 	if recursive && mask&syscall.IN_CREATE != 0 && mask&syscall.IN_ISDIR != 0 {
 		var addErr error
 		w.mu.Lock()
@@ -299,7 +324,7 @@ func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 				if _, err := w.addWatchLocked(full, lw.op, rootKey, false); err != nil {
 					addErr = err
 				} else {
-					w.walkAndAddLocked(full, lw.op, rootKey)
+					synth = w.walkAndAddLocked(full, lw.op, rootKey)
 				}
 			}
 		}
@@ -310,10 +335,14 @@ func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 	}
 
 	op := maskToOp(mask) & lw.op
-	if op == 0 {
-		return
+	if op != 0 {
+		w.sendEvent(Event{Name: full, Op: op})
 	}
-	w.sendEvent(Event{Name: full, Op: op})
+	if lw.op.Has(Create) {
+		for _, p := range synth {
+			w.sendEvent(Event{Name: p, Op: Create})
+		}
+	}
 }
 
 func (w *Watcher) sendEvent(e Event) {

@@ -661,6 +661,65 @@ func TestAddRecursiveNewDir(t *testing.T) {
 	}
 }
 
+// TestAddRecursiveDeepMkdir exercises issue #29: when MkdirAll creates a
+// nested tree under a recursive root, every level should surface a
+// Create event, not just the outermost directory. Inotify only reports
+// the top dir natively, so the watcher must walk and synthesize Creates
+// for the descendants; FSEvents and ReadDirectoryChangesW emit them
+// natively. The test tolerates duplicates because concurrent activity
+// in the brief race window can legitimately deliver the same Create
+// twice (documented on AddRecursive).
+func TestAddRecursiveDeepMkdir(t *testing.T) {
+	root := tempDir(t)
+
+	w := newWatcher(t)
+	if err := w.AddRecursive(root, All); err != nil {
+		t.Fatalf("AddRecursive: %v", err)
+	}
+
+	a := filepath.Join(root, "a")
+	b := filepath.Join(a, "b")
+	c := filepath.Join(b, "c")
+	if err := os.MkdirAll(c, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	want := map[string]bool{a: false, b: false, c: false}
+	deadline := time.NewTimer(eventTimeout)
+	defer deadline.Stop()
+	for {
+		all := true
+		for _, seen := range want {
+			if !seen {
+				all = false
+				break
+			}
+		}
+		if all {
+			return
+		}
+		select {
+		case ev, ok := <-w.Events:
+			if !ok {
+				t.Fatalf("Events channel closed early")
+			}
+			if _, tracked := want[ev.Name]; tracked && ev.Op.Has(Create) {
+				want[ev.Name] = true
+			}
+		case err := <-w.Errors:
+			t.Fatalf("unexpected error: %v", err)
+		case <-deadline.C:
+			missing := []string{}
+			for p, seen := range want {
+				if !seen {
+					missing = append(missing, p)
+				}
+			}
+			t.Fatalf("timeout; missing Create for %v", missing)
+		}
+	}
+}
+
 func TestAddRecursiveRemoveDropsSubtree(t *testing.T) {
 	root := tempDir(t)
 	nested := filepath.Join(root, "a", "b")
