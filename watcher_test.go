@@ -499,9 +499,9 @@ func TestSymlinkDeduplicates(t *testing.T) {
 	}
 }
 
-func TestAddCaseInsensitiveOnWindows(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("Windows-only")
+func TestAddCaseInsensitive(t *testing.T) {
+	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
+		t.Skip("It looks that your file system is case sensitive, so this test is not applicable")
 	}
 	dir := tempDir(t)
 	w := newWatcher(t)
@@ -515,6 +515,75 @@ func TestAddCaseInsensitiveOnWindows(t *testing.T) {
 	}
 	if err := w.Remove(upper); err != nil {
 		t.Errorf("Remove(uppercased) = %v, want nil", err)
+	}
+}
+
+func TestAddSharpS(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("This test is only applicable on macOS")
+	}
+
+	parent := tempDir(t)
+	w := newWatcher(t)
+
+	dir := filepath.Join(parent, "ß") // LATIN SMALL LETTER SHARP S
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := w.Add(dir, All); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	dir = filepath.Join(parent, "ẞ") // LATIN CAPITAL LETTER SHARP S
+	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+		t.Errorf("Mkdir(ẞ) = %v, want os.ErrExist", err)
+	}
+	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(ẞ) = %v, want ErrAlreadyAdded", err)
+	}
+
+	dir = filepath.Join(parent, "ss")
+	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+		t.Errorf("Mkdir(ss) = %v, want os.ErrExist", err)
+	}
+	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(ss) = %v, want ErrAlreadyAdded", err)
+	}
+
+	dir = filepath.Join(parent, "SS")
+	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+		t.Errorf("Mkdir(SS) = %v, want os.ErrExist", err)
+	}
+	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(SS) = %v, want ErrAlreadyAdded", err)
+	}
+}
+
+func TestAddUnicodeNormalization(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("This test is only applicable on macOS")
+	}
+
+	parent := tempDir(t)
+	w := newWatcher(t)
+
+	dir := filepath.Join(parent, "\u304C") // HIRAGANA LETTER GA (U+304C) in NFC
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := w.Add(dir, All); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	dir = filepath.Join(parent, "\u304B\u3099") // HIRAGANA LETTER GA in NFD (U+304C decomposes to U+304B + U+3099)
+	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+		t.Errorf("Mkdir(\u304B\u3099) = %v, want os.ErrExist", err)
+	}
+	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+		t.Errorf("Add(\u304B\u3099) = %v, want ErrAlreadyAdded", err)
+	}
+	if err := w.Remove(dir); err != nil {
+		t.Errorf("Remove(\u304B\u3099) = %v, want nil", err)
 	}
 }
 
