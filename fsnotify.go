@@ -4,6 +4,7 @@ package fsnotify
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"strings"
 )
 
@@ -33,26 +34,47 @@ func (op Op) Has(target Op) bool {
 
 // String returns a human-readable representation such as "CREATE|WRITE".
 func (op Op) String() string {
+	op &= All
 	if op == 0 {
 		return ""
 	}
-	var parts []string
+
+	// Fast path for single-bit ops, which are common in practice and avoid allocations.
+	n := bits.OnesCount32(uint32(op))
+	if n == 1 {
+		switch op {
+		case Create:
+			return "CREATE"
+		case Write:
+			return "WRITE"
+		case Remove:
+			return "REMOVE"
+		case Rename:
+			return "RENAME"
+		case Chmod:
+			return "CHMOD"
+		}
+	}
+
+	// Slow path for multiple bits, which allocates a string builder.
+	var buf strings.Builder
+	buf.Grow(n * 7) // "CREATE" is 6 chars + '|' separator
 	if op.Has(Create) {
-		parts = append(parts, "CREATE")
+		buf.WriteString("|CREATE")
 	}
 	if op.Has(Write) {
-		parts = append(parts, "WRITE")
+		buf.WriteString("|WRITE")
 	}
 	if op.Has(Remove) {
-		parts = append(parts, "REMOVE")
+		buf.WriteString("|REMOVE")
 	}
 	if op.Has(Rename) {
-		parts = append(parts, "RENAME")
+		buf.WriteString("|RENAME")
 	}
 	if op.Has(Chmod) {
-		parts = append(parts, "CHMOD")
+		buf.WriteString("|CHMOD")
 	}
-	return strings.Join(parts, "|")
+	return buf.String()[1:]
 }
 
 // Event represents a single file system change.
