@@ -560,43 +560,70 @@ func TestAddCaseInsensitive(t *testing.T) {
 }
 
 func TestAddSharpS(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("This test is only applicable on macOS")
-	}
+	switch runtime.GOOS {
+	case "darwin":
+		// APFS is case-insensitive.
+		// Uppercase and lowercase Sharp S are considered the same path on APFS.
+		// Furthermore, "ss" and "SS" are also considered the same path as "ß" and "ẞ".
 
-	parent := tempDir(t)
-	w := newWatcher(t)
+		parent := tempDir(t)
+		w := newWatcher(t)
 
-	dir := filepath.Join(parent, "ß") // LATIN SMALL LETTER SHARP S
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatalf("Mkdir: %v", err)
-	}
-	if err := w.Add(dir, All); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
+		dir := filepath.Join(parent, "ß") // LATIN SMALL LETTER SHARP S
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("Mkdir: %v", err)
+		}
+		if err := w.Add(dir, All); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
 
-	dir = filepath.Join(parent, "ẞ") // LATIN CAPITAL LETTER SHARP S
-	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
-		t.Errorf("Mkdir(ẞ) = %v, want os.ErrExist", err)
-	}
-	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
-		t.Errorf("Add(ẞ) = %v, want ErrAlreadyAdded", err)
-	}
+		dir = filepath.Join(parent, "ẞ") // LATIN CAPITAL LETTER SHARP S
+		if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+			t.Errorf("Mkdir(ẞ) = %v, want os.ErrExist", err)
+		}
+		if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+			t.Errorf("Add(ẞ) = %v, want ErrAlreadyAdded", err)
+		}
 
-	dir = filepath.Join(parent, "ss")
-	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
-		t.Errorf("Mkdir(ss) = %v, want os.ErrExist", err)
-	}
-	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
-		t.Errorf("Add(ss) = %v, want ErrAlreadyAdded", err)
-	}
+		dir = filepath.Join(parent, "ss")
+		if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+			t.Errorf("Mkdir(ss) = %v, want os.ErrExist", err)
+		}
+		if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+			t.Errorf("Add(ss) = %v, want ErrAlreadyAdded", err)
+		}
 
-	dir = filepath.Join(parent, "SS")
-	if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
-		t.Errorf("Mkdir(SS) = %v, want os.ErrExist", err)
-	}
-	if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
-		t.Errorf("Add(SS) = %v, want ErrAlreadyAdded", err)
+		dir = filepath.Join(parent, "SS")
+		if err := os.Mkdir(dir, 0o755); !errors.Is(err, os.ErrExist) {
+			t.Errorf("Mkdir(SS) = %v, want os.ErrExist", err)
+		}
+		if err := w.Add(dir, All); !errors.Is(err, ErrAlreadyAdded) {
+			t.Errorf("Add(SS) = %v, want ErrAlreadyAdded", err)
+		}
+
+	default:
+		// On other platforms, including Windows, "ß" and "ẞ" are considered different paths.
+		// NTFS is case-insensitive, but as an exception,
+		// it distinguishes between uppercase and lowercase Sharp S.
+
+		parent := tempDir(t)
+		w := newWatcher(t)
+
+		dir1 := filepath.Join(parent, "ß") // LATIN SMALL LETTER SHARP S
+		if err := os.Mkdir(dir1, 0o755); err != nil {
+			t.Fatalf("Mkdir(ß): %v", err)
+		}
+		if err := w.Add(dir1, All); err != nil {
+			t.Fatalf("Add(ß): %v", err)
+		}
+
+		dir2 := filepath.Join(parent, "ẞ") // LATIN CAPITAL LETTER SHARP S
+		if err := os.Mkdir(dir2, 0o755); err != nil {
+			t.Fatalf("Mkdir(ẞ): %v", err)
+		}
+		if err := w.Add(dir2, All); err != nil {
+			t.Fatalf("Add(ẞ): %v", err)
+		}
 	}
 }
 
