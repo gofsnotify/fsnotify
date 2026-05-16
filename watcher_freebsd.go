@@ -357,6 +357,7 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 	}
 
 	var added []string
+	var registerErrs []error
 
 	w.mu.Lock()
 	if w.closed {
@@ -373,12 +374,16 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 			continue
 		}
 		childPath := filepath.Join(dir.path, name)
+		// The directory entry was observed even when child watch registration
+		// fails; emit Create, then surface the error because future events for
+		// this child are not guaranteed without a watch.
+		added = append(added, childPath)
 		child, err := w.openLocked(childPath, requested, dir)
 		if err != nil {
+			registerErrs = append(registerErrs, fmt.Errorf("fsnotify: register %s: %w", childPath, err))
 			continue
 		}
 		dir.children[name] = child
-		added = append(added, childPath)
 		if recursive && child.isDir {
 			// mkdir -p (or a populated subtree moved in) lands all the
 			// nested entries before NOTE_WRITE reaches us; report them
@@ -392,6 +397,9 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 		for _, p := range added {
 			w.sendEvent(Event{Name: p, Op: Create})
 		}
+	}
+	for _, err := range registerErrs {
+		w.sendError(err)
 	}
 }
 
