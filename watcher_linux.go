@@ -234,9 +234,6 @@ func (w *Watcher) readLoop() {
 				return
 			default:
 			}
-			if errors.Is(err, syscall.EINTR) {
-				continue
-			}
 			// os.ErrClosed surfaces when Close calls file.Close().
 			if errors.Is(err, os.ErrClosed) {
 				return
