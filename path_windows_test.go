@@ -1,6 +1,6 @@
 //go:build windows
 
-package fsnotify
+package fswatcher
 
 import (
 	"strings"

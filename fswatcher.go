@@ -1,5 +1,5 @@
-// Package fsnotify provides cross-platform file system change notifications.
-package fsnotify
+// Package fswatcher provides cross-platform file system change notifications.
+package fswatcher
 
 import (
 	"errors"
@@ -94,11 +94,11 @@ func (e Event) String() string {
 // Sentinel errors returned by Watcher methods.
 var (
 	// ErrAlreadyAdded is returned by Add when path is already registered.
-	ErrAlreadyAdded = errors.New("fsnotify: path already added")
+	ErrAlreadyAdded = errors.New("fswatcher: path already added")
 	// ErrNotAdded is returned by Remove when path is not registered.
-	ErrNotAdded = errors.New("fsnotify: path not added")
+	ErrNotAdded = errors.New("fswatcher: path not added")
 	// ErrClosed is returned by methods called on a closed Watcher.
-	ErrClosed = errors.New("fsnotify: watcher closed")
+	ErrClosed = errors.New("fswatcher: watcher closed")
 	// ErrUnsupported is returned by NewWatcher on platforms without a backend.
-	ErrUnsupported = errors.New("fsnotify: platform not supported")
+	ErrUnsupported = errors.New("fswatcher: platform not supported")
 )

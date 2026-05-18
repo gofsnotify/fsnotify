@@ -1,4 +1,4 @@
-package fsnotify
+package fswatcher
 
 import "path/filepath"
 

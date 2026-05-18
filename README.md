@@ -1,22 +1,16 @@
-# fsnotify
+# fswatcher
 
-> **Moved.** This project has moved to [`github.com/fswatcher/fswatcher`](https://github.com/fswatcher/fswatcher). The module at `github.com/gofsnotify/fsnotify` is deprecated and will not receive further updates. Please update your imports:
->
-> ```
-> go get github.com/fswatcher/fswatcher
-> ```
->
-> See issue [#27](https://github.com/gofsnotify/fsnotify/issues/27) for the background.
-
-[![CI](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml/badge.svg)](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/gofsnotify/fsnotify.svg)](https://pkg.go.dev/github.com/gofsnotify/fsnotify)
+[![CI](https://github.com/fswatcher/fswatcher/actions/workflows/ci.yml/badge.svg)](https://github.com/fswatcher/fswatcher/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/fswatcher/fswatcher.svg)](https://pkg.go.dev/github.com/fswatcher/fswatcher)
 
 Cross-platform file system notifications for Go.
+
+> Previously published as `github.com/gofsnotify/fsnotify` (package `fsnotify`). The old path is deprecated and redirects here; update imports and rename `fsnotify.X` to `fswatcher.X`. See [#27](https://github.com/fswatcher/fswatcher/issues/27).
 
 ## Install
 
 ```
-go get github.com/gofsnotify/fsnotify
+go get github.com/fswatcher/fswatcher
 ```
 
 ## Usage
@@ -27,17 +21,17 @@ package main
 import (
 	"log"
 
-	"github.com/gofsnotify/fsnotify"
+	"github.com/fswatcher/fswatcher"
 )
 
 func main() {
-	w, err := fsnotify.NewWatcher()
+	w, err := fswatcher.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer w.Close()
 
-	if err := w.Add("/path/to/dir", fsnotify.Create|fsnotify.Write|fsnotify.Remove); err != nil {
+	if err := w.Add("/path/to/dir", fswatcher.Create|fswatcher.Write|fswatcher.Remove); err != nil {
 		log.Fatal(err)
 	}
 

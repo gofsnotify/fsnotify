@@ -1,4 +1,4 @@
-package fsnotify
+package fswatcher
 
 import (
 	"errors"
@@ -154,7 +154,7 @@ func TestKqueueCreateReportsChildRegistrationFailure(t *testing.T) {
 			if !ok {
 				t.Fatalf("Errors channel closed early")
 			}
-			if strings.Contains(err.Error(), "fsnotify: register "+target+":") {
+			if strings.Contains(err.Error(), "fswatcher: register "+target+":") {
 				sawRegisterErr = true
 			}
 		case <-deadline.C:

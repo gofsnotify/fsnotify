@@ -1,6 +1,6 @@
 //go:build darwin
 
-package fsnotify
+package fswatcher
 
 import (
 	"fmt"
@@ -88,15 +88,15 @@ func initFSEvents() error {
 func doInitFSEvents() error {
 	cf, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	if err != nil {
-		return fmt.Errorf("fsnotify: load CoreFoundation: %w", err)
+		return fmt.Errorf("fswatcher: load CoreFoundation: %w", err)
 	}
 	cs, err := purego.Dlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	if err != nil {
-		return fmt.Errorf("fsnotify: load CoreServices: %w", err)
+		return fmt.Errorf("fswatcher: load CoreServices: %w", err)
 	}
 	ls, err := purego.Dlopen("/usr/lib/libSystem.B.dylib", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	if err != nil {
-		return fmt.Errorf("fsnotify: load libSystem: %w", err)
+		return fmt.Errorf("fswatcher: load libSystem: %w", err)
 	}
 
 	purego.RegisterLibFunc(&_cfStringCreateWithCString, cf, "CFStringCreateWithCString")
@@ -116,7 +116,7 @@ func doInitFSEvents() error {
 
 	sym, err := purego.Dlsym(cf, "kCFTypeArrayCallBacks")
 	if err != nil {
-		return fmt.Errorf("fsnotify: lookup kCFTypeArrayCallBacks: %w", err)
+		return fmt.Errorf("fswatcher: lookup kCFTypeArrayCallBacks: %w", err)
 	}
 	cfTypeArrayCallBacks = sym
 
@@ -210,7 +210,7 @@ func NewWatcher() (*Watcher, error) {
 		return nil, err
 	}
 
-	queue := _dispatchQueueCreate("github.com/gofsnotify/fsnotify\x00", 0)
+	queue := _dispatchQueueCreate("github.com/fswatcher/fswatcher\x00", 0)
 
 	events := make(chan Event, 64)
 	errors := make(chan error, 8)
@@ -278,7 +278,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", path, err)
+		return fmt.Errorf("fswatcher: add %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -298,7 +298,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 
 	stream, err := w.createStreamLocked(abs)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 	w.streams[key] = &fsStream{
 		stream:    stream,
@@ -347,7 +347,7 @@ func (w *Watcher) createStreamLocked(path string) (uintptr, error) {
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
+		return fmt.Errorf("fswatcher: remove %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -444,7 +444,7 @@ func handleFSEventsCallback(clientInfo uintptr, n int, pathsPtr, flagsPtr unsafe
 		}
 
 		if f&fseMustScanSubs != 0 {
-			w.sendError(fmt.Errorf("fsnotify: events may have been dropped for %s", p))
+			w.sendError(fmt.Errorf("fswatcher: events may have been dropped for %s", p))
 		}
 
 		r, ok := matchRegistration(p, regs)

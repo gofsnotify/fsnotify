@@ -1,9 +1,9 @@
-// Command fsnotify watches one or more paths and prints file system
+// Command fswatcher watches one or more paths and prints file system
 // events to stdout, or runs a shell command on each event.
 //
 // Usage:
 //
-//	fsnotify [flags] PATH [PATH...]
+//	fswatcher [flags] PATH [PATH...]
 //
 // Flags:
 //
@@ -11,7 +11,7 @@
 //	-V          verbose log to stderr (registrations, signals, exec exits)
 //	-e CMD      run CMD via the platform shell on every event
 //	            (sh -c on Unix, cmd /C on Windows). The child receives
-//	            FSNOTIFY_PATH and FSNOTIFY_OP in its environment.
+//	            FSWATCHER_PATH and FSWATCHER_OP in its environment.
 //	-json       emit each event as one NDJSON object on stdout instead
 //	            of the default "OP\tPATH" line. Mutually exclusive with -e.
 //
@@ -30,7 +30,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/gofsnotify/fsnotify"
+	"github.com/fswatcher/fswatcher"
 )
 
 var (
@@ -55,7 +55,7 @@ func main() {
 	}
 
 	log.SetFlags(0)
-	log.SetPrefix("fsnotify: ")
+	log.SetPrefix("fswatcher: ")
 	log.SetOutput(os.Stderr)
 
 	if *execCmd != "" && *jsonOut {
@@ -63,7 +63,7 @@ func main() {
 	}
 	jsonEnc := json.NewEncoder(os.Stdout)
 
-	w, err := fsnotify.NewWatcher()
+	w, err := fswatcher.NewWatcher()
 	if err != nil {
 		log.Fatalf("new watcher: %v", err)
 	}
@@ -74,7 +74,7 @@ func main() {
 		add = w.AddRecursive
 	}
 	for _, p := range paths {
-		if err := add(p, fsnotify.All); err != nil {
+		if err := add(p, fswatcher.All); err != nil {
 			log.Fatalf("add %s: %v", p, err)
 		}
 		if *verbose {
@@ -128,9 +128,9 @@ type jsonEvent struct {
 
 // runCommand executes cmd through the platform's shell so users can
 // pipe, redirect, and use environment variables naturally. The event
-// is exposed via FSNOTIFY_PATH and FSNOTIFY_OP so the command does not
+// is exposed via FSWATCHER_PATH and FSWATCHER_OP so the command does not
 // need to parse anything.
-func runCommand(cmd string, ev fsnotify.Event) {
+func runCommand(cmd string, ev fswatcher.Event) {
 	var c *exec.Cmd
 	if runtime.GOOS == "windows" {
 		c = exec.Command("cmd", "/C", cmd)
@@ -140,8 +140,8 @@ func runCommand(cmd string, ev fsnotify.Event) {
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	c.Env = append(os.Environ(),
-		"FSNOTIFY_PATH="+ev.Name,
-		"FSNOTIFY_OP="+ev.Op.String(),
+		"FSWATCHER_PATH="+ev.Name,
+		"FSWATCHER_OP="+ev.Op.String(),
 	)
 	if err := c.Run(); err != nil {
 		if *verbose {

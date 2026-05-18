@@ -1,6 +1,6 @@
 //go:build windows
 
-package fsnotify
+package fswatcher
 
 import (
 	"errors"
@@ -106,7 +106,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", path, err)
+		return fmt.Errorf("fswatcher: add %s: %w", path, err)
 	}
 	cmpKey := pathKey(abs)
 
@@ -123,7 +123,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 
 	pathPtr, err := windows.UTF16PtrFromString(abs)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 	handle, err := windows.CreateFile(
 		pathPtr,
@@ -135,13 +135,13 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 		0,
 	)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 	w.nextKey++
 	key := w.nextKey
 	if _, err := windows.CreateIoCompletionPort(handle, w.port, key, 0); err != nil {
 		windows.CloseHandle(handle)
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 
 	ww := &winWatch{
@@ -153,7 +153,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	if err := ww.startRead(); err != nil {
 		windows.CloseHandle(handle)
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 	w.watches[key] = ww
 	return nil
@@ -163,7 +163,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
+		return fmt.Errorf("fswatcher: remove %s: %w", path, err)
 	}
 	cmpKey := pathKey(abs)
 
@@ -176,7 +176,7 @@ func (w *Watcher) Remove(path string) error {
 		if pathKey(ww.path) == cmpKey {
 			delete(w.watches, k)
 			if err := windows.CloseHandle(ww.handle); err != nil {
-				return fmt.Errorf("fsnotify: remove %s: %w", abs, err)
+				return fmt.Errorf("fswatcher: remove %s: %w", abs, err)
 			}
 			return nil
 		}

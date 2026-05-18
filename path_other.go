@@ -1,6 +1,6 @@
 //go:build !windows && !darwin
 
-package fsnotify
+package fswatcher
 
 // pathKey returns p unchanged on platforms with case-sensitive paths.
 func pathKey(p string) string {

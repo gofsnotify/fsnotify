@@ -1,6 +1,6 @@
 //go:build darwin
 
-package fsnotify
+package fswatcher
 
 import (
 	"golang.org/x/text/cases"

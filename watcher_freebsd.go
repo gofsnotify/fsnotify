@@ -1,6 +1,6 @@
 //go:build freebsd
 
-package fsnotify
+package fswatcher
 
 import (
 	"errors"
@@ -116,7 +116,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", path, err)
+		return fmt.Errorf("fswatcher: add %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -130,7 +130,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	root, err := w.openLocked(abs, op, nil)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 	root.recursive = recursive
 	if root.isDir {
@@ -174,7 +174,7 @@ func (w *Watcher) populateChildrenLocked(dir *kqWatch, recursive bool) []string 
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
+		return fmt.Errorf("fswatcher: remove %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -380,7 +380,7 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 		added = append(added, childPath)
 		child, err := w.openLocked(childPath, requested, dir)
 		if err != nil {
-			registerErrs = append(registerErrs, fmt.Errorf("fsnotify: register %s: %w", childPath, err))
+			registerErrs = append(registerErrs, fmt.Errorf("fswatcher: register %s: %w", childPath, err))
 			continue
 		}
 		dir.children[name] = child

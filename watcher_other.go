@@ -1,6 +1,6 @@
 //go:build !linux && !windows && !darwin && !freebsd
 
-package fsnotify
+package fswatcher
 
 // Watcher is a no-op placeholder on platforms without a backend.
 type Watcher struct {

@@ -1,6 +1,6 @@
 //go:build linux
 
-package fsnotify
+package fswatcher
 
 import (
 	"errors"
@@ -98,7 +98,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", path, err)
+		return fmt.Errorf("fswatcher: add %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -111,7 +111,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 		return ErrAlreadyAdded
 	}
 	if _, err := w.addWatchLocked(abs, op, key, recursive); err != nil {
-		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
+		return fmt.Errorf("fswatcher: add %s: %w", abs, err)
 	}
 	if recursive {
 		// Pre-existing descendants at registration time are intentionally
@@ -170,7 +170,7 @@ func (w *Watcher) walkAndAddLocked(root string, op Op, rootKey string) []string 
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
+		return fmt.Errorf("fswatcher: remove %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -327,7 +327,7 @@ func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 		}
 		w.mu.Unlock()
 		if addErr != nil {
-			w.sendError(fmt.Errorf("fsnotify: auto-watch %s: %w", full, addErr))
+			w.sendError(fmt.Errorf("fswatcher: auto-watch %s: %w", full, addErr))
 		}
 	}
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-18
+
+### Changed
+- Rename module path to `github.com/fswatcher/fswatcher` and package to `fswatcher` (#27)
+- Rename `cmd/fsnotify` binary to `cmd/fswatcher`; environment variables passed to `-e CMD` are now `FSWATCHER_PATH` and `FSWATCHER_OP`
+- Error messages now use the `fswatcher: ` prefix (was `fsnotify: `)
+
 ## [0.0.7] - 2026-05-18
 
 ### Changed
@@ -109,11 +116,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tighten the `Chmod` test for Windows
 - Canonicalize temp directories in tests for cross-platform stability
 
-[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.7...HEAD
-[0.0.7]: https://github.com/gofsnotify/fsnotify/compare/v0.0.6...v0.0.7
-[0.0.6]: https://github.com/gofsnotify/fsnotify/compare/v0.0.5...v0.0.6
-[0.0.5]: https://github.com/gofsnotify/fsnotify/compare/v0.0.4...v0.0.5
-[0.0.4]: https://github.com/gofsnotify/fsnotify/compare/v0.0.3...v0.0.4
-[0.0.3]: https://github.com/gofsnotify/fsnotify/compare/v0.0.2...v0.0.3
-[0.0.2]: https://github.com/gofsnotify/fsnotify/compare/v0.0.1...v0.0.2
-[0.0.1]: https://github.com/gofsnotify/fsnotify/releases/tag/v0.0.1
+[Unreleased]: https://github.com/fswatcher/fswatcher/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/fswatcher/fswatcher/compare/v0.0.7...v0.1.0
+[0.0.7]: https://github.com/fswatcher/fswatcher/compare/v0.0.6...v0.0.7
+[0.0.6]: https://github.com/fswatcher/fswatcher/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/fswatcher/fswatcher/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/fswatcher/fswatcher/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/fswatcher/fswatcher/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/fswatcher/fswatcher/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/fswatcher/fswatcher/releases/tag/v0.0.1
