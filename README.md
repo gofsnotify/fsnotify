@@ -1,5 +1,13 @@
 # fsnotify
 
+> **Moved.** This project has moved to [`github.com/fswatcher/fswatcher`](https://github.com/fswatcher/fswatcher). The module at `github.com/gofsnotify/fsnotify` is deprecated and will not receive further updates. Please update your imports:
+>
+> ```
+> go get github.com/fswatcher/fswatcher
+> ```
+>
+> See issue [#27](https://github.com/gofsnotify/fsnotify/issues/27) for the background.
+
 [![CI](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml/badge.svg)](https://github.com/gofsnotify/fsnotify/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/gofsnotify/fsnotify.svg)](https://pkg.go.dev/github.com/gofsnotify/fsnotify)
 

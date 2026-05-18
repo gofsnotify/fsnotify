@@ -1,3 +1,4 @@
+// Deprecated: this module has moved to github.com/fswatcher/fswatcher.
 module github.com/gofsnotify/fsnotify
 
 go 1.25.0

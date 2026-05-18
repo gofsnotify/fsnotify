@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-05-18
+
+### Changed
+- Mark this module as deprecated; development continues at `github.com/fswatcher/fswatcher` (#27)
+
 ## [0.0.6] - 2026-05-12
 
 ### Added
@@ -104,7 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tighten the `Chmod` test for Windows
 - Canonicalize temp directories in tests for cross-platform stability
 
-[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/gofsnotify/fsnotify/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/gofsnotify/fsnotify/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/gofsnotify/fsnotify/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/gofsnotify/fsnotify/compare/v0.0.3...v0.0.4
