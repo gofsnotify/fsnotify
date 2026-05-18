@@ -17,19 +17,8 @@ const (
 	fileNotifyChangeSecurity = 0x00000100
 	watchBufferSize          = 4096
 	// FILE_NOTIFY_INFORMATION layout: 3 x uint32 then a flexible WCHAR[].
-	fileNotifyHeaderSize = 12
-	// ERROR_INVALID_HANDLE; not exposed by stdlib syscall.
-	errorInvalidHandle = windows.Errno(6)
+	fileNotifyHeaderSize = uint32(unsafe.Offsetof(windows.FileNotifyInformation{}.FileName))
 )
-
-// fileNotifyInformation mirrors the Win32 FILE_NOTIFY_INFORMATION struct
-// since stdlib syscall does not expose it.
-type fileNotifyInformation struct {
-	NextEntryOffset uint32
-	Action          uint32
-	FileNameLength  uint32
-	FileName        [1]uint16
-}
 
 // Watcher monitors registered paths via ReadDirectoryChangesW.
 type Watcher struct {
@@ -245,7 +234,7 @@ func (w *Watcher) readLoop() {
 			// directory being deleted out from under us. In the latter
 			// case the entry is still in the map, so drop it to release
 			// the handle and surface a Remove event for the root.
-			if errors.Is(err, windows.ERROR_OPERATION_ABORTED) || errors.Is(err, errorInvalidHandle) {
+			if errors.Is(err, windows.ERROR_OPERATION_ABORTED) || errors.Is(err, windows.ERROR_INVALID_HANDLE) {
 				w.dropWatch(key)
 				continue
 			}
@@ -269,7 +258,7 @@ func (w *Watcher) handleCompletion(key uintptr, n uint32) {
 
 	off := uint32(0)
 	for off+fileNotifyHeaderSize <= n {
-		raw := (*fileNotifyInformation)(unsafe.Pointer(&ww.buf[off]))
+		raw := (*windows.FileNotifyInformation)(unsafe.Pointer(&ww.buf[off]))
 		nameStart := off + fileNotifyHeaderSize
 		nameEnd := nameStart + raw.FileNameLength
 		if nameEnd > uint32(len(ww.buf)) || nameEnd > n {
