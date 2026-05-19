@@ -13,15 +13,15 @@ import (
 
 const eventTimeout = 10 * time.Second
 
-// tempDir returns TempDir() routed through canonicalize so paths
+// tempDir returns TempDir() routed through Canonicalize so paths
 // emitted by the watcher (which canonicalizes Add input) compare cleanly
 // against expected values regardless of platform-specific symlinks
 // (/var → /private/var on macOS) or 8.3 short forms on Windows.
 func tempDir(tb testing.TB) string {
 	tb.Helper()
-	d, err := canonicalize(tb.TempDir())
+	d, err := Canonicalize(tb.TempDir())
 	if err != nil {
-		tb.Fatalf("canonicalize TempDir: %v", err)
+		tb.Fatalf("Canonicalize TempDir: %v", err)
 	}
 	return d
 }
@@ -379,33 +379,33 @@ func TestCanonicalize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
-	// Route the expected value through canonicalize so the test follows
+	// Route the expected value through Canonicalize so the test follows
 	// the same EvalSymlinks pipeline as the implementation. Otherwise
 	// systems where the cwd traverses a symlink (FreeBSD /home →
 	// /usr/home, macOS /var → /private/var) report a spurious mismatch.
-	cwd, err := canonicalize(rawCwd)
+	cwd, err := Canonicalize(rawCwd)
 	if err != nil {
-		t.Fatalf("canonicalize(cwd): %v", err)
+		t.Fatalf("Canonicalize(cwd): %v", err)
 	}
 
-	got, err := canonicalize(".")
+	got, err := Canonicalize(".")
 	if err != nil {
-		t.Fatalf("canonicalize(.): %v", err)
+		t.Fatalf("Canonicalize(.): %v", err)
 	}
 	if got != cwd {
-		t.Errorf("canonicalize(.) = %q, want %q", got, cwd)
+		t.Errorf("Canonicalize(.) = %q, want %q", got, cwd)
 	}
 
-	got, err = canonicalize("foo/../bar")
+	got, err = Canonicalize("foo/../bar")
 	if err != nil {
-		t.Fatalf("canonicalize: %v", err)
+		t.Fatalf("Canonicalize: %v", err)
 	}
-	// When using canonicalize() on a non-existent directory, EvalSymlinks
+	// When using Canonicalize() on a non-existent directory, EvalSymlinks
 	// doesn't work, so symbolic links in the current directory's path
 	// aren't expanded. Therefore, use rawCmd before expansion.
 	want := filepath.Join(rawCwd, "bar")
 	if got != want {
-		t.Errorf("canonicalize(foo/../bar) = %q, want %q", got, want)
+		t.Errorf("Canonicalize(foo/../bar) = %q, want %q", got, want)
 	}
 }
 

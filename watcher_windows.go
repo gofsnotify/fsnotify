@@ -104,7 +104,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	if op == 0 {
 		op = All
 	}
-	abs, err := canonicalize(path)
+	abs, err := Canonicalize(path)
 	if err != nil {
 		return fmt.Errorf("fswatcher: add %s: %w", path, err)
 	}
@@ -161,7 +161,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
 func (w *Watcher) Remove(path string) error {
-	abs, err := canonicalize(path)
+	abs, err := Canonicalize(path)
 	if err != nil {
 		return fmt.Errorf("fswatcher: remove %s: %w", path, err)
 	}
