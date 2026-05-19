@@ -276,7 +276,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	if op == 0 {
 		op = All
 	}
-	abs, err := canonicalize(path)
+	abs, err := Canonicalize(path)
 	if err != nil {
 		return fmt.Errorf("fswatcher: add %s: %w", path, err)
 	}
@@ -345,7 +345,7 @@ func (w *Watcher) createStreamLocked(path string) (uintptr, error) {
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
 func (w *Watcher) Remove(path string) error {
-	abs, err := canonicalize(path)
+	abs, err := Canonicalize(path)
 	if err != nil {
 		return fmt.Errorf("fswatcher: remove %s: %w", path, err)
 	}
@@ -439,7 +439,7 @@ func handleFSEventsCallback(clientInfo uintptr, n int, pathsPtr, flagsPtr unsafe
 		p := goString(cStr)
 		f := *(*uint32)(unsafe.Add(flagsPtr, uintptr(i)*4))
 
-		if abs, err := canonicalize(p); err == nil {
+		if abs, err := Canonicalize(p); err == nil {
 			p = abs
 		}
 

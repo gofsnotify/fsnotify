@@ -55,6 +55,7 @@ func main() {
 - `(*Watcher).Close() error` — stops the watcher and closes the channels.
 - `(*Watcher).Events <-chan Event` — receives change notifications.
 - `(*Watcher).Errors <-chan error` — receives non-fatal errors.
+- `Canonicalize(path string) (string, error)` — returns the form fswatcher uses internally for `Add`, `Remove`, and `Event.Name`. Use it to align a watched root with the paths in event names, for example when computing relative paths or applying an ignore list.
 
 Paths are canonicalized (absolute, cleaned, with symlinks resolved when the target exists; on Windows 8.3 short forms are expanded and case is folded), so two spellings of the same path dedupe and `Event.Name` is always returned in canonical form.
 

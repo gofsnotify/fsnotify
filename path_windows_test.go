@@ -12,9 +12,9 @@ import (
 func TestCanonicalizeExpandsShortPath(t *testing.T) {
 	// t.TempDir() may already mix 8.3 and long components on CI runners,
 	// so fully canonicalize first to get the expected long form.
-	long, err := canonicalize(t.TempDir())
+	long, err := Canonicalize(t.TempDir())
 	if err != nil {
-		t.Fatalf("canonicalize(TempDir): %v", err)
+		t.Fatalf("Canonicalize(TempDir): %v", err)
 	}
 
 	longPtr, err := syscall.UTF16PtrFromString(long)
@@ -31,12 +31,12 @@ func TestCanonicalizeExpandsShortPath(t *testing.T) {
 		t.Skip("temp dir has no distinct 8.3 short form")
 	}
 
-	got, err := canonicalize(short)
+	got, err := Canonicalize(short)
 	if err != nil {
-		t.Fatalf("canonicalize: %v", err)
+		t.Fatalf("Canonicalize: %v", err)
 	}
 	if !strings.EqualFold(got, long) {
-		t.Errorf("canonicalize(%q) = %q, want %q", short, got, long)
+		t.Errorf("Canonicalize(%q) = %q, want %q", short, got, long)
 	}
 }
 
